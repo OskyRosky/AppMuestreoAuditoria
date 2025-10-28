@@ -28,8 +28,6 @@ setwd("C:/Users/Oscar Centeno/Desktop/Oscar/CGR/2024/MUM/App/Scripts_dashboard")
 
 suppressWarnings(source("Librerias.R"))
 
-
-
 ###################################
 #     Creacion del dashboard      # 
 ###################################
