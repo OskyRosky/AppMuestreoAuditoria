@@ -20,7 +20,7 @@ set.seed(Sys.time())
 ################
 
 
-setwd("C:/Users/Oscar Centeno/Desktop/Oscar/CGR/2024/MUM/App/Scripts_dashboard")
+setwd("/Users/sultan/DataScience/AppMuestreoAuditoria/App/v1/Scripts_dashboard")
 
 #################
 #   Librerias   # 
