@@ -1,54 +1,47 @@
-#################
-#   Librerias   # 
-#################
+########################################
+# Bootstrap de dependencias de la App
+########################################
 
-###############
-#  Librerías  # 
-###############
+# 0) Mirror fijo (evita el prompt del CRAN)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
 
-suppressMessages(library(shiny))
-suppressMessages(library(shinydashboard))
-suppressMessages(library(readxl))
-suppressMessages(library(dplyr))
-suppressMessages(library(DT))
-suppressMessages(library(plyr))
-suppressMessages(library(readr))
-suppressMessages(library(janitor))
-suppressMessages(library(shiny))
-suppressMessages(library(shinydashboard))
-suppressMessages(library(shinydashboardPlus))
-suppressMessages(library(highcharter))
-suppressMessages(library(formattable))
-suppressMessages(library(highcharter))
-suppressMessages(library(viridisLite))
-suppressMessages(library(stringi))
-suppressMessages(library(data.table))
-suppressMessages(library(tidyr))
-suppressMessages(library(forecast))
-suppressMessages(library(kableExtra))
-suppressMessages(library(shinyWidgets))
-suppressMessages(library(png))
-suppressMessages(library(scales))
-suppressMessages(library(gt))
-suppressMessages(library(ggplot2))
-suppressMessages(library(reactable))
-suppressMessages(library(RcppRoll))
-suppressMessages(library(sunburstR))
-suppressMessages(library(htmltools))
-suppressMessages(library(d3r))
-suppressMessages(library(jfa))
-suppressMessages(library(readxl))
-suppressMessages(library(dplyr))
-suppressMessages(library(openxlsx))
-suppressMessages(library(fitdistrplus))
-suppressMessages(library(MASS))
-suppressMessages(library(ggplot2))
-suppressMessages(library(stats))
-suppressMessages(library(rmarkdown))
-suppressMessages(library(officer))
-suppressMessages(library(flextable))
+# 1) Paquetes requeridos por la App
+.paquetes <- c(
+  "here", "shiny", "shinydashboard", "shinydashboardPlus", "shinyWidgets",
+  "readxl", "readr", "openxlsx", "dplyr", "tidyr", "janitor", "data.table", "stringi", "scales",
+  "ggplot2", "highcharter", "reactable", "kableExtra", "gt", "formattable", "png", "htmltools", "viridisLite",
+  "stats", "MASS", "fitdistrplus", "forecast", "jfa",
+  "rmarkdown", "officer", "flextable",
+  "RcppRoll", "sunburstR", "d3r"
+)
 
-# Versiones de las librerías   -----> Ver la versión de "attached base packages:"  y "other attached packages:"
+# 2) ¿Forzar instalación? (por defecto NO)
+#    Activa con APP_BOOTSTRAP=TRUE en el entorno si lo necesitas
+.force_install <- isTRUE(as.logical(Sys.getenv("APP_BOOTSTRAP", "FALSE")))
 
-sessionInfo()
+# 3) Instalar solo lo que falte (o todo si .force_install = TRUE)
+.instalar_si_faltan <- function(pkgs, force = FALSE) {
+  ya_instalados <- rownames(installed.packages())
+  faltan <- if (force) pkgs else setdiff(pkgs, ya_instalados)
+  if (length(faltan)) {
+    message("📦 Instalando paquetes: ", paste(faltan, collapse = ", "))
+    install.packages(faltan, dependencies = TRUE, quiet = TRUE)
+  }
+}
 
+# 4) Cargar silenciosamente
+.cargar_todos <- function(pkgs) {
+  invisible(lapply(
+    pkgs,
+    function(p) suppressMessages(library(p, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE))
+  ))
+}
+
+# 5) Ejecutar bootstrap mínimo
+.instalar_si_faltan(.paquetes, force = .force_install)
+.cargar_todos(.paquetes)
+
+# 6) Info de sesión y raíz del proyecto
+suppressMessages(library(here))
+cat("✅ Librerías listas.\n")
+cat("📂 Raíz del proyecto (here): ", here(), "\n", sep = "")
