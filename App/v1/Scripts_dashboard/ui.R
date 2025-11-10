@@ -1,56 +1,43 @@
 ###############################################################
 # 📄 ui.R — Estructura principal del UI (shinydashboard)
 # -------------------------------------------------------------
-# Este script arma la interfaz de usuario ensamblando:
-#   - header  : definido en header.R
-#   - sidebar : definido en sider.R (objeto `sidebar`)
-#   - body    : definido en body.R  (objeto `body`)
+# Ensambla los objetos:
+#   - header  : definido en header.R  -> dashboardHeader(...)
+#   - sidebar : definido en sider.R   -> dashboardSidebar(...)
+#   - body    : definido en body.R    -> dashboardBody(...)
 #
-# Buenas prácticas aplicadas:
+# Buenas prácticas:
 #   • Validación temprana de objetos requeridos.
-#   • Título del navegador (tab) + meta tags para responsividad.
-#   • Skin consistente (tema de shinydashboard).
-#   • Hook opcional para CSS/JS personalizados sin romper nada.
+#   • NO imprimir objetos sueltos (p.ej. una línea con `header` sola).
+#   • Pasar cada objeto tal cual a dashboardPage (sin envolver en tagList).
 ###############################################################
 
-# --- (1) Validaciones mínimas: asegura que las partes existen ----
-stopifnot("El objeto `header` no existe."  = exists("header",  inherits = TRUE))
-stopifnot("El objeto `sidebar` no existe." = exists("sidebar", inherits = TRUE))
-stopifnot("El objeto `body` no existe."    = exists("body",    inherits = TRUE))
+############################
+#   Contenido del UI       #
+#   (definición de ui)     #
+############################
 
-# --- (2) Metadatos y cabecera HTML adicional (opcional y seguro) ---
-#     Aquí puedes inyectar favicon, CSS propio y meta viewport.
-extra_head <- htmltools::tags$head(
-  htmltools::tags$meta(charset = "utf-8"),
-  htmltools::tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
-  # Favicon opcional (coloca un favicon en www/ si quieres habilitarlo)
-  # htmltools::tags$link(rel = "icon", type = "image/png", href = "favicon.png"),
-  # CSS mínimo opcional (ejemplo: ajustar altura del contenido)
-  htmltools::tags$style(htmltools::HTML("
-    /* Ejemplo: reduce rebotes de scroll en contenedores largos */
-    .content-wrapper, .right-side { overflow-x: hidden; }
-    /* Ejemplo: mejora la legibilidad de títulos */
-    .content-header > h1 { font-weight: 600; letter-spacing: .2px; }
-  "))
-)
+# (1) Validaciones mínimas (fallan temprano si algo no está)
+stopifnot("El objeto `header` no existe."  = exists("header",  inherits = FALSE))
+stopifnot("El objeto `sidebar` no existe." = exists("sidebar", inherits = FALSE))
+stopifnot("El objeto `body` no existe."    = exists("body",    inherits = FALSE))
 
-# --- (3) Construcción del UI con shinydashboard -------------------
+# (2) Verificación de tipo (deben ser shiny.tag o shiny.tag.list)
+ok_header  <- inherits(header,  "shiny.tag") || inherits(header,  "shiny.tag.list")
+ok_sidebar <- inherits(sidebar, "shiny.tag") || inherits(sidebar, "shiny.tag.list")
+ok_body    <- inherits(body,    "shiny.tag") || inherits(body,    "shiny.tag.list")
+
+if (!ok_header)  stop("`header` no es un shiny.tag válido. Revisa header.R")
+if (!ok_sidebar) stop("`sidebar` no es un shiny.tag válido. Revisa sider.R")
+if (!ok_body)    stop("`body` no es un shiny.tag válido. Revisa body.R")
+
+# (3) Construcción del dashboard — NO envolver header en tagList, ni imprimirlo
 ui <- shinydashboard::dashboardPage(
-  title = "Muestreo | CGR",  # Título en la pestaña del navegador
-  skin  = "blue",            # Tema (blue, black, purple, green, red, yellow)
-  header = tagList(extra_head, header),  # Inyecta meta/CSS y luego el header real
-  sidebar = sidebar,
-  body = body
-  # NOTA: Si más adelante migras a shinydashboardPlus, podrías usar dashboardPagePlus
+  title   = "Muestreo | CGR",  # Título en pestaña del navegador
+  skin    = "blue",
+  header  = header,   # <- PASA EL OBJETO TAL CUAL
+  sidebar = sidebar,  # <- PASA EL OBJETO TAL CUAL
+  body    = body      # <- PASA EL OBJETO TAL CUAL
 )
 
-# --- (4) Fondo con gradiente (opcional). Requiere shinyWidgets ----
-# Mantengo tu bloque original como referencia; coméntalo/actívalo a gusto.
-# shinyWidgets::setBackgroundColor(
-#   color = c("#F7FBFF", "#2171B5"),
-#   gradient = c("linear", "radial"),
-#   direction = c("bottom", "top", "right", "left"),
-#   shinydashboard = TRUE
-# )
-
-# Fin del ui.R
+# (4) Nada más al final (no imprimir `ui`).

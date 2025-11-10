@@ -43,10 +43,12 @@ cat("📂 Scripts dir: ", scripts_dir, "\n", sep = "")
 #################
 # Cargamos en orden estricto para que `ui` y `server` existan al final.
 # chdir = TRUE permite que los paths relativos dentro de cada script funcionen.
+# ⚠️ Cambio clave: local = .GlobalEnv para que los objetos queden disponibles para ui.R
 cargar <- function(x) {
   archivo <- file.path(scripts_dir, x)
   if (!file.exists(archivo)) stop("No existe: ", archivo)
-  source(archivo, local = TRUE, chdir = TRUE, encoding = "UTF-8")
+  # Antes: source(..., local = TRUE, ...)
+  source(archivo, local = .GlobalEnv, chdir = TRUE, encoding = "UTF-8")
   cat("✅ Cargado: ", x, "\n", sep = "")
 }
 
@@ -58,6 +60,10 @@ if (file.exists(file.path(scripts_dir, "Parametros.R"))) cargar("Parametros.R")
 cargar("header.R")
 cargar("sider.R")
 cargar("body.R")
+
+# Evita confusiones con la función base body()
+if (is.function(get("body", envir = .GlobalEnv))) stop("El objeto `body` es una función; renómbralo en body.R (p.ej. body_ui).")
+
 cargar("ui.R")
 # 4) Lógica del servidor
 cargar("server.R")
