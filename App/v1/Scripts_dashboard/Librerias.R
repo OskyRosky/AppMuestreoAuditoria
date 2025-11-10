@@ -21,6 +21,7 @@
 # garantiza consistencia entre entornos Windows/Mac/Linux.
 # =========================================================
 options(repos = c(CRAN = "https://cloud.r-project.org"))
+options(pkgType = "binary")
 
 # =========================================================
 # (1) Listado de dependencias de la App
@@ -28,7 +29,7 @@ options(repos = c(CRAN = "https://cloud.r-project.org"))
 # Incluye librerías de UI (Shiny), análisis estadístico,
 # visualización, manejo de datos y generación de reportes.
 # =========================================================
-.paquetes <- c(
+.core <- c(
   # --- Sistema base y estructura de app ---
   "here", "shiny", "shinydashboard", "shinydashboardPlus", "shinyWidgets",
 
@@ -37,34 +38,36 @@ options(repos = c(CRAN = "https://cloud.r-project.org"))
   "data.table", "stringi", "scales",
 
   # --- Visualización y tableros ---
-  "ggplot2", "highcharter", "reactable", "kableExtra", "gt",
+  "ggplot2", "highcharter", "reactable", "gt",
   "formattable", "png", "htmltools", "viridisLite",
 
   # --- Estadística, modelado y muestreo ---
   "stats", "MASS", "fitdistrplus", "forecast", "jfa",
 
-  # --- Reportes y documentos ---
-  "rmarkdown", "officer", "flextable",
-
   # --- Utilidades y soporte ---
   "RcppRoll", "sunburstR", "d3r"
 )
 
+# --- NUEVO ---
+# Paquetes “pesados” que requieren librerías nativas del sistema (macOS/Linux)
+.heavy <- c(
+  "kableExtra", "officer", "flextable",
+  "svglite", "ragg", "systemfonts", "textshaping",
+  "magick", "rsvg", "pdftools"
+)
+
 # =========================================================
-# (2) Variable de control: forzar instalación
+# (2) Variables de control
 # ---------------------------------------------------------
-# Si APP_BOOTSTRAP=TRUE en el entorno (por ejemplo:
-#   export APP_BOOTSTRAP=TRUE   o   Sys.setenv(APP_BOOTSTRAP=TRUE)
-# ), reinstalará todos los paquetes incluso si ya existen.
+# APP_BOOTSTRAP = TRUE → fuerza reinstalación.
+# APP_HEAVY = TRUE → incluye paquetes pesados.
 # =========================================================
 .force_install <- isTRUE(as.logical(Sys.getenv("APP_BOOTSTRAP", "FALSE")))
+.install_heavy <- isTRUE(as.logical(Sys.getenv("APP_HEAVY", "FALSE")))
 
 # =========================================================
 # (3) Función para instalar paquetes faltantes
 # ---------------------------------------------------------
-# pkgs  -> vector de nombres de paquetes
-# force -> si es TRUE, reinstala todos los listados
-# =========================================================
 .instalar_si_faltan <- function(pkgs, force = FALSE) {
   ya_instalados <- rownames(installed.packages())
   faltan <- if (force) pkgs else setdiff(pkgs, ya_instalados)
@@ -77,9 +80,6 @@ options(repos = c(CRAN = "https://cloud.r-project.org"))
 # =========================================================
 # (4) Función para cargar librerías silenciosamente
 # ---------------------------------------------------------
-# Utiliza suppressMessages() y quietly=TRUE para no saturar
-# la consola con mensajes de carga o conflictos.
-# =========================================================
 .cargar_todos <- function(pkgs) {
   invisible(lapply(
     pkgs,
@@ -93,10 +93,22 @@ options(repos = c(CRAN = "https://cloud.r-project.org"))
 # =========================================================
 # (5) Ejecutar el bootstrap de dependencias
 # ---------------------------------------------------------
-# Instala (si falta) y luego carga todas las librerías.
+# Instala (si falta) y luego carga todas las librerías base.
 # =========================================================
-.instalar_si_faltan(.paquetes, force = .force_install)
-.cargar_todos(.paquetes)
+.instalar_si_faltan(.core, force = .force_install)
+.cargar_todos(.core)
+
+# --- NUEVO BLOQUE ---
+# (5.1) Cargar paquetes pesados solo si APP_HEAVY=TRUE
+if (.install_heavy) {
+  try({
+    .instalar_si_faltan(.heavy, force = .force_install)
+    .cargar_todos(.heavy)
+    message("✅ Paquetes pesados cargados correctamente.")
+  }, silent = TRUE)
+} else {
+  message("ℹ️ Paquetes pesados omitidos (usa APP_HEAVY=TRUE para incluirlos).")
+}
 
 # =========================================================
 # (6) Información del entorno
