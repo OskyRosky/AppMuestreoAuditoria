@@ -24,12 +24,13 @@ server <- function(input, output, session) {
   .read_any <- function(path) {
     ext <- tools::file_ext(path)
     switch(ext,
-      csv  = read.csv(path, stringsAsFactors = FALSE),
-      txt  = read.delim(path, stringsAsFactors = FALSE),
+      csv  = utils::read.csv(path, stringsAsFactors = FALSE),
+      txt  = utils::read.delim(path, stringsAsFactors = FALSE),
       xlsx = readxl::read_excel(path),
       stop("Tipo de archivo no soportado")
     )
   }
+
 
   # ---- 0.2 Validaciones cortas ----------------------------------------
   .need_numeric <- function(df, var, msg = "Seleccione una variable numérica válida.") {
@@ -39,7 +40,6 @@ server <- function(input, output, session) {
 
   # ---- 0.3 Helpers Highcharter ----------------------------------------
   .hc_density <- function(x, name, color) {
-    # Devuelve un highchart con una sola serie de densidad (area)
     highcharter::hchart(stats::density(x, na.rm = TRUE), type = "area", name = name, color = color) %>%
       highcharter::hc_tooltip(crosshairs = TRUE, valueDecimals = 1, shared = TRUE, borderWidth = 5) %>%
       highcharter::hc_chart(zoomType = "xy") %>%
@@ -64,15 +64,14 @@ server <- function(input, output, session) {
   }
 
   # ---- 0.5 Estado global para evitar colisiones -----------------------
-  # Usamos reactiveValues para cada “módulo” (MUM/LES/Atri)
   rv <- reactiveValues(
     # Descriptivo
     data1 = NULL,
     # MUM
     data2 = NULL,
-    sample_size_mum = NULL,     # numeric
-    seed_mum = NULL,            # numeric
-    muestra_mum = NULL,         # data.frame
+    sample_size_mum = NULL,
+    seed_mum = NULL,
+    muestra_mum = NULL,
     neg_mum = FALSE,
     # LES
     data3 = NULL,
@@ -92,15 +91,13 @@ server <- function(input, output, session) {
     eval_decision = NULL
   )
 
-# ---- 0.X Flag de modo "pesado" y control de visibilidad de descargas DOCX ----
-is_heavy <- identical(tolower(Sys.getenv("APP_HEAVY", "true")), "true")
-
-# Exponer una señal reactiva al UI para ocultar botones DOCX si no hay dependencias
-output$showDownloads <- reactive({ is_heavy })
-outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
+  # ---- 0.6 Flag de modo "pesado" (control de descargas DOCX) ----------
+  is_heavy <- identical(tolower(Sys.getenv("APP_HEAVY", "true")), "true")
+  output$showDownloads <- reactive({ is_heavy })
+  outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
 
   # =====================================================================
-  # 1) ANÁLISIS DESCRIPTIVO (p1)  - fileInput: file1  - outputs: stats, histogram1, binomialPlot, poissonPlot, downloadReport1
+  # 1) ANÁLISIS DESCRIPTIVO (p2)  - fileInput: file1
   # =====================================================================
 
   # ---- 1.1 Lectura de datos -------------------------------------------
@@ -134,13 +131,14 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
   })
   outputOptions(output, 'negativesAlert_1', suspendWhenHidden = FALSE)
 
-  # ---- 1.3 Datos simulados para ejemplo Binomial / Poisson -------------
+  # ---- 1.3 Datos demo Binomial / Poisson -------------------------------
   set.seed(123)
   datos_binom <- rbinom(n = 10000, size = 100, prob = 0.5)
   datos_pois_extremos <- c(rpois(10000, lambda = 40), sample(80:100, size = 10, replace = TRUE))
 
   # ---- 1.4 Renderizaciones tras “Iniciar Análisis Descriptivos” --------
   observeEvent(input$start_analysis, {
+
     # 1.4.1 Tabla de estadísticas
     output$stats <- reactable::renderReactable({
       req(data1(), input$variable1)
@@ -151,20 +149,21 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
         ConteoCasos = sum(!is.na(Monto)),
         ValoresNegativos = sum(Monto < 0, na.rm = TRUE),
         ValoresFaltantes = sum(is.na(Monto)),
-        Minimo = min(Monto, na.rm = TRUE),
-        Maximo = max(Monto, na.rm = TRUE),
+        Minimo  = min(Monto, na.rm = TRUE),
+        Maximo  = max(Monto, na.rm = TRUE),
         Promedio = mean(Monto, na.rm = TRUE),
-        Mediana = median(Monto, na.rm = TRUE),
-        Moda = as.numeric(names(sort(table(Monto), decreasing = TRUE)[1])),
-        DesviacionEstandar = sd(Monto, na.rm = TRUE),
-        Percentil10 = quantile(Monto, 0.1, na.rm = TRUE),
-        Percentil25 = quantile(Monto, 0.25, na.rm = TRUE),
-        Percentil50 = quantile(Monto, 0.50, na.rm = TRUE),
-        Percentil75 = quantile(Monto, 0.75, na.rm = TRUE),
-        Percentil90 = quantile(Monto, 0.90, na.rm = TRUE)
+        Mediana  = median(Monto, na.rm = TRUE),
+        Moda     = as.numeric(names(sort(table(Monto), decreasing = TRUE)[1])),
+        DesviacionEstandar = stats::sd(Monto, na.rm = TRUE),
+        Percentil10 = stats::quantile(Monto, 0.1, na.rm = TRUE),
+        Percentil25 = stats::quantile(Monto, 0.25, na.rm = TRUE),
+        Percentil50 = stats::quantile(Monto, 0.50, na.rm = TRUE),
+        Percentil75 = stats::quantile(Monto, 0.75, na.rm = TRUE),
+        Percentil90 = stats::quantile(Monto, 0.90, na.rm = TRUE)
       ) |>
         tidyr::pivot_longer(dplyr::everything(), names_to = "Medida", values_to = "Valor") |>
         dplyr::mutate(Valor = round(Valor, 1))
+
       reactable::reactable(Stats, defaultPageSize = 15)
     })
 
@@ -190,26 +189,26 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
   })
 
   # ---- 1.5 Reporte descriptivo (.docx) ---------------------------------
- 
- output$downloadReport1 <- downloadHandler(
+output$downloadReport1 <- downloadHandler(
   filename = function() paste0("Reporte_Analisis_Descriptivo_", Sys.Date(), ".docx"),
   contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   content = function(file) {
     tryCatch({
-      req(data1(), input$variable1)
-      .need_numeric(data1(), input$variable1)
+      req(data1(), input$variable1); .need_numeric(data1(), input$variable1)
 
+      # Asegura que officer y flextable estén disponibles
       if (!requireNamespace("officer", quietly = TRUE) ||
           !requireNamespace("flextable", quietly = TRUE)) {
         stop("Faltan paquetes 'officer' y/o 'flextable'.")
       }
 
-      # Documento
+      # 1) Portada y metadatos
       doc <- officer::read_docx() |>
         officer::body_add_par("Análisis Descriptivo", style = "heading 1") |>
         officer::body_add_par(paste("Archivo de datos:", input$file1$name), style = "heading 2") |>
         officer::body_add_par(paste("Variable seleccionada:", input$variable1), style = "heading 2")
 
+      # 2) Tabla de estadísticas
       var_data <- data1()[[input$variable1]]
       Stats <- tibble::tibble(
         Medida = c("Conteo de Casos","Valores Negativos","Valores Faltantes","Mínimo","Máximo","Promedio",
@@ -233,18 +232,22 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
       ) |> dplyr::mutate(Valor = round(Valor, 1))
 
       ft <- flextable::flextable(Stats)
-      doc <- doc |> officer::body_add_flextable(ft)
+      # ⬇️⬇️ LÍNEA CORREGIDA: usar flextable::body_add_flextable
+      doc <- flextable::body_add_flextable(doc, value = ft)
 
+      # 3) Gráfico de densidad
       p <- ggplot2::ggplot(data.frame(x = var_data), ggplot2::aes(x = x)) +
         ggplot2::geom_density(fill = 'skyblue', color = 'blue', alpha = 0.5) +
         ggplot2::labs(title = paste("Distribución de", input$variable1))
-      img <- .ggsave_tmp(p, 5, 4, 300)
-      on.exit(unlink(img), add = TRUE)
-      doc <- doc |> officer::body_add_img(src = img, width = 5, height = 4)
+      img <- .ggsave_tmp(p, 5, 4, 300); on.exit(unlink(img), add = TRUE)
+      doc <- officer::body_add_img(doc, src = img, width = 5, height = 4)
 
+      # 4) Guardar DOCX
       print(doc, target = file)
+
     }, error = function(e) {
-      showNotification(paste("No se pudo generar el DOCX (Descriptivo):", conditionMessage(e)), type = "error", duration = 10)
+      showNotification(paste("No se pudo generar el DOCX (Descriptivo):", conditionMessage(e)),
+                       type = "error", duration = 10)
       validate(need(FALSE, "Fallo en la generación del reporte DOCX (Descriptivo)."))
     })
   }
@@ -254,7 +257,7 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
   # 2) MUESTREO MUM (p3)  - fileInput: file2
   # =====================================================================
 
-  # ---- 2.1 Lectura de datos + selector + alerta negativos --------------
+  # ---- 2.1 Lectura + selector + alerta negativos ----------------------
   data2 <- reactive({
     inFile <- input$file2
     if (is.null(inFile)) return(NULL)
@@ -282,7 +285,7 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
   })
   outputOptions(output, 'negativesAlertMuestreoMUM', suspendWhenHidden = FALSE)
 
-  # Sugerencias tabla
+  # Tabla de sugerencias MUM
   sugerencias_tamaño <- data.frame(
     `Tamaño de Muestra` = c("Inferiores (<=50)", "Entre (50-100)", "Superiores (100-400)"),
     `Margen de Tolerancia (Tolerable)` = c("0.2 - 0.3", "0.03 - 0.05", "0.01 - 0.03"),
@@ -293,19 +296,16 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
     reactable::reactable(sugerencias_tamaño, bordered = TRUE, highlight = TRUE)
   })
 
-  # Flag para conditionalPanel en UI
+  # Señal para conditionalPanel
   output$hasNegatives_MUM <- reactive({ isTRUE(rv$neg_mum) })
   outputOptions(output, "hasNegatives_MUM", suspendWhenHidden = FALSE)
 
   # ---- 2.2 Flujo principal MUM ----------------------------------------
   observeEvent(input$update_MUM, {
-    # chequeo parámetros
     if (input$freq2_MUM >= input$freq1_MUM) {
-      showModal(modalDialog(
-        title = "Advertencia",
-        "El valor 'Esperado' debe ser menor que el 'Tolerable'.",
-        easyClose = TRUE, footer = NULL
-      ))
+      showModal(modalDialog(title = "Advertencia",
+                            "El valor 'Esperado' debe ser menor que el 'Tolerable'.",
+                            easyClose = TRUE, footer = NULL))
       return(invisible())
     }
     req(data2(), input$variable2)
@@ -317,7 +317,6 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
                        likelihood  = input$distri_1,
                        conf.level  = input$freq3_MUM)
     rv$sample_size_mum <- as.integer(stage1$n)
-
     output$SampleSize_MUM <- reactable::renderReactable({
       reactable::reactable(data.frame(Muestra = rv$sample_size_mum))
     })
@@ -328,7 +327,7 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
       reactable::reactable(data.frame(Semilla = rv$seed_mum))
     })
 
-    # 2.2.3 Selección PPT (proporcional por tamaño)
+    # 2.2.3 Selección PPT
     datos <- data2()
     total_valor <- sum(datos[[input$variable2]], na.rm = TRUE)
     validate(need(total_valor > 0, "La suma de la variable es 0; imposible muestrear por PPT."))
@@ -385,43 +384,42 @@ outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
       ggplot2::theme_minimal()
   }
 
-output$downloadReport2 <- downloadHandler(
-  filename = function() paste0("Muestreo_MUM_", Sys.Date(), ".docx"),
-  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  content = function(file) {
-    tryCatch({
-      if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
-      req(data2(), input$variable2, rv$sample_size_mum, rv$seed_mum, rv$muestra_mum)
+  output$downloadReport2 <- downloadHandler(
+    filename = function() paste0("Muestreo_MUM_", Sys.Date(), ".docx"),
+    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    content = function(file) {
+      tryCatch({
+        if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
+        req(data2(), input$variable2, rv$sample_size_mum, rv$seed_mum, rv$muestra_mum)
 
-      doc <- officer::read_docx() |>
-        officer::body_add_par("Muestreo por Unidades Monetarias", style = "heading 1") |>
-        officer::body_add_par("Parámetros", style = "heading 2") |>
-        officer::body_add_par(paste("Nombre del archivo de datos:", input$file2$name), style = "Normal") |>
-        officer::body_add_par(paste("Variable seleccionada:", input$variable2), style = "Normal") |>
-        officer::body_add_par(paste("Error Tolerable:", input$freq1_MUM), style = "Normal") |>
-        officer::body_add_par(paste("Error Esperado:", input$freq2_MUM), style = "Normal") |>
-        officer::body_add_par(paste("Nivel de confianza:", input$freq3_MUM), style = "Normal") |>
-        officer::body_add_par(paste("Selección de la distribución:", input$distri_1), style = "Normal") |>
-        officer::body_add_par("Información de Muestreo", style = "heading 2") |>
-        officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_mum), style = "Normal") |>
-        officer::body_add_par(paste("Semilla para selección por PPT:", rv$seed_mum), style = "Normal")
+        doc <- officer::read_docx() |>
+          officer::body_add_par("Muestreo por Unidades Monetarias", style = "heading 1") |>
+          officer::body_add_par("Parámetros", style = "heading 2") |>
+          officer::body_add_par(paste("Nombre del archivo de datos:", input$file2$name), style = "Normal") |>
+          officer::body_add_par(paste("Variable seleccionada:", input$variable2), style = "Normal") |>
+          officer::body_add_par(paste("Error Tolerable:", input$freq1_MUM), style = "Normal") |>
+          officer::body_add_par(paste("Error Esperado:", input$freq2_MUM), style = "Normal") |>
+          officer::body_add_par(paste("Nivel de confianza:", input$freq3_MUM), style = "Normal") |>
+          officer::body_add_par(paste("Selección de la distribución:", input$distri_1), style = "Normal") |>
+          officer::body_add_par("Información de Muestreo", style = "heading 2") |>
+          officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_mum), style = "Normal") |>
+          officer::body_add_par(paste("Semilla para selección por PPT:", rv$seed_mum), style = "Normal")
 
-      g <- generarGraficoDensidadMUM(data2(), rv$muestra_mum, input$variable2)
-      img <- .ggsave_tmp(g, 7, 5, 300)
-      on.exit(unlink(img), add = TRUE)
-      doc <- doc |>
-        officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
-        officer::body_add_img(src = img, width = 7, height = 5) |>
-        officer::body_add_par("1.4 Muestra Seleccionada", style = "heading 2") |>
-        officer::body_add_table(rv$muestra_mum, style = "table_template")
+        g <- generarGraficoDensidadMUM(data2(), rv$muestra_mum, input$variable2)
+        img <- .ggsave_tmp(g, 7, 5, 300); on.exit(unlink(img), add = TRUE)
+        doc <- doc |>
+          officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
+          officer::body_add_img(src = img, width = 7, height = 5) |>
+          officer::body_add_par("Muestra Seleccionada", style = "heading 2") |>
+          officer::body_add_table(rv$muestra_mum, style = "table_template")
 
-      print(doc, target = file)
-    }, error = function(e) {
-      showNotification(paste("No se pudo generar el DOCX (MUM):", conditionMessage(e)), type = "error", duration = 10)
-      validate(need(FALSE, "Fallo en la generación del reporte DOCX (MUM)."))
-    })
-  }
-)
+        print(doc, target = file)
+      }, error = function(e) {
+        showNotification(paste("No se pudo generar el DOCX (MUM):", conditionMessage(e)), type = "error", duration = 10)
+        validate(need(FALSE, "Fallo en la generación del reporte DOCX (MUM)."))
+      })
+    }
+  )
 
   # =====================================================================
   # 3) MUESTREO LES (p4)  - fileInput: file3
@@ -455,7 +453,7 @@ output$downloadReport2 <- downloadHandler(
   })
   outputOptions(output, 'negativesAlertMuestreoLES', suspendWhenHidden = FALSE)
 
-  # Sugerencias LES
+  # Tabla de sugerencias LES
   sugerencias_tamaño_2 <- data.frame(
     `Tamaño de Muestra` = c("Inferior (<=50)", "Entre (50-100)", "Superior (100)"),
     `Margen de Tolerancia (Tolerable)` = c("0.2 - 0.3", "0.03 - 0.05", "0.01 - 0.03"),
@@ -472,11 +470,9 @@ output$downloadReport2 <- downloadHandler(
   # ---- 3.2 Flujo principal LES ----------------------------------------
   observeEvent(input$update_LES, {
     if (input$freq2_LES >= input$freq1_LES) {
-      showModal(modalDialog(
-        title = "Advertencia",
-        "El valor 'Esperado' debe ser menor que el 'Tolerable'.",
-        easyClose = TRUE, footer = NULL
-      ))
+      showModal(modalDialog(title = "Advertencia",
+                            "El valor 'Esperado' debe ser menor que el 'Tolerable'.",
+                            easyClose = TRUE, footer = NULL))
       return(invisible())
     }
     req(data3(), input$variable3)
@@ -498,7 +494,7 @@ output$downloadReport2 <- downloadHandler(
       reactable::reactable(data.frame(Semilla = rv$seed_les))
     })
 
-    # Selección por LES:
+    # Selección por LES
     LES <- input$LES
     datos <- data3()
     var   <- input$variable3
@@ -508,10 +504,8 @@ output$downloadReport2 <- downloadHandler(
     n_req   <- rv$sample_size_les
 
     if (n_m >= n_req) {
-      # toma los más grandes
       rv$muestra_les <- head(mayores[order(-mayores[[var]]), , drop = FALSE], n_req)
     } else {
-      # completa al azar de los <= LES
       restantes <- n_req - n_m
       menores   <- datos[datos[[var]] <= LES, , drop = FALSE]
       set.seed(rv$seed_les)
@@ -581,43 +575,42 @@ output$downloadReport2 <- downloadHandler(
       ggplot2::theme_minimal()
   }
 
-output$downloadReport3 <- downloadHandler(
-  filename = function() paste0("Muestreo_LES_", Sys.Date(), ".docx"),
-  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  content = function(file) {
-    tryCatch({
-      if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
-      req(data3(), input$variable3, rv$sample_size_les, rv$seed_les, rv$muestra_les)
+  output$downloadReport3 <- downloadHandler(
+    filename = function() paste0("Muestreo_LES_", Sys.Date(), ".docx"),
+    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    content = function(file) {
+      tryCatch({
+        if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
+        req(data3(), input$variable3, rv$sample_size_les, rv$seed_les, rv$muestra_les)
 
-      doc <- officer::read_docx() |>
-        officer::body_add_par("Muestreo LES", style = "heading 1") |>
-        officer::body_add_par("Parámetros", style = "heading 2") |>
-        officer::body_add_par(paste("Nombre del archivo de datos:", input$file3$name), style = "Normal") |>
-        officer::body_add_par(paste("Variable seleccionada:", input$variable3), style = "Normal") |>
-        officer::body_add_par(paste("Error Tolerable:", input$freq1_LES), style = "Normal") |>
-        officer::body_add_par(paste("Error Esperado:", input$freq2_LES), style = "Normal") |>
-        officer::body_add_par(paste("Nivel de confianza:", input$freq3_LES), style = "Normal") |>
-        officer::body_add_par(paste("Selección de la distribución:", input$distri_2), style = "Normal") |>
-        officer::body_add_par("Información de Muestreo", style = "heading 2") |>
-        officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_les), style = "Normal") |>
-        officer::body_add_par(paste("Semilla para selección aleatoria inferior al LES:", rv$seed_les), style = "Normal")
+        doc <- officer::read_docx() |>
+          officer::body_add_par("Muestreo LES", style = "heading 1") |>
+          officer::body_add_par("Parámetros", style = "heading 2") |>
+          officer::body_add_par(paste("Nombre del archivo de datos:", input$file3$name), style = "Normal") |>
+          officer::body_add_par(paste("Variable seleccionada:", input$variable3), style = "Normal") |>
+          officer::body_add_par(paste("Error Tolerable:", input$freq1_LES), style = "Normal") |>
+          officer::body_add_par(paste("Error Esperado:", input$freq2_LES), style = "Normal") |>
+          officer::body_add_par(paste("Nivel de confianza:", input$freq3_LES), style = "Normal") |>
+          officer::body_add_par(paste("Selección de la distribución:", input$distri_2), style = "Normal") |>
+          officer::body_add_par("Información de Muestreo", style = "heading 2") |>
+          officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_les), style = "Normal") |>
+          officer::body_add_par(paste("Semilla para selección aleatoria inferior al LES:", rv$seed_les), style = "Normal")
 
-      g <- generarGraficoDensidadLES(data3(), rv$muestra_les, input$variable3)
-      img <- .ggsave_tmp(g, 7, 5, 300)
-      on.exit(unlink(img), add = TRUE)
-      doc <- doc |>
-        officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
-        officer::body_add_img(src = img, width = 7, height = 5) |>
-        officer::body_add_par("1.4 Muestra Seleccionada", style = "heading 2") |>
-        officer::body_add_table(rv$muestra_les, style = "table_template")
+        g <- generarGraficoDensidadLES(data3(), rv$muestra_les, input$variable3)
+        img <- .ggsave_tmp(g, 7, 5, 300); on.exit(unlink(img), add = TRUE)
+        doc <- doc |>
+          officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
+          officer::body_add_img(src = img, width = 7, height = 5) |>
+          officer::body_add_par("Muestra Seleccionada", style = "heading 2") |>
+          officer::body_add_table(rv$muestra_les, style = "table_template")
 
-      print(doc, target = file)
-    }, error = function(e) {
-      showNotification(paste("No se pudo generar el DOCX (LES):", conditionMessage(e)), type = "error", duration = 10)
-      validate(need(FALSE, "Fallo en la generación del reporte DOCX (LES)."))
-    })
-  }
-)
+        print(doc, target = file)
+      }, error = function(e) {
+        showNotification(paste("No se pudo generar el DOCX (LES):", conditionMessage(e)), type = "error", duration = 10)
+        validate(need(FALSE, "Fallo en la generación del reporte DOCX (LES)."))
+      })
+    }
+  )
 
   # =====================================================================
   # 4) MUESTREO POR ATRIBUTOS (p5)  - fileInput: file4
@@ -667,7 +660,7 @@ output$downloadReport3 <- downloadHandler(
       reactable::reactable(data.frame(Semilla = rv$seed_atri))
     })
 
-    # Selección aleatoria simple (atributos)
+    # Selección aleatoria simple
     set.seed(rv$seed_atri)
     n <- min(rv$sample_size_atri, nrow(data4()))
     rv$muestra_atri <- dplyr::sample_n(data4(), size = n)
@@ -676,7 +669,6 @@ output$downloadReport3 <- downloadHandler(
     })
 
     # Tablas de porcentajes (origen vs muestra)
-    tablaOrigenPorce <- rv$muestra_atri # placeholder para cierre léxico
     tablaOrigenPorce <- reactive({
       req(data4(), input$variable4)
       data4() |>
@@ -751,45 +743,45 @@ output$downloadReport3 <- downloadHandler(
         ggplot2::theme(legend.position = "bottom")
     }
 
-output$downloadReport4 <- downloadHandler(
-  filename = function() paste0("Muestreo_Atributos_", Sys.Date(), ".docx"),
-  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  content = function(file) {
-    tryCatch({
-      if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
-      req(data4(), input$variable4, rv$sample_size_atri, rv$seed_atri, rv$muestra_atri)
+    output$downloadReport4 <- downloadHandler(
+      filename = function() paste0("Muestreo_Atributos_", Sys.Date(), ".docx"),
+      contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      content = function(file) {
+        tryCatch({
+          if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
+          req(data4(), input$variable4, rv$sample_size_atri, rv$seed_atri, rv$muestra_atri)
 
-      doc <- officer::read_docx() |>
-        officer::body_add_par("Muestreo Atributos", style = "heading 1") |>
-        officer::body_add_par("Parámetros", style = "heading 2") |>
-        officer::body_add_par(paste("Nombre del archivo de datos:", input$file4$name), style = "Normal") |>
-        officer::body_add_par(paste("Variable seleccionada:", input$variable4), style = "Normal") |>
-        officer::body_add_par(paste("Error Tolerable:", input$freq1_Atri), style = "Normal") |>
-        officer::body_add_par(paste("Error Esperado:", input$freq2_Atri), style = "Normal") |>
-        officer::body_add_par(paste("Nivel de confianza:", input$freq3_Atri), style = "Normal") |>
-        officer::body_add_par(paste("Selección de la distribución:", input$distri_3), style = "Normal") |>
-        officer::body_add_par("Información de Muestreo", style = "heading 2") |>
-        officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_atri), style = "Normal") |>
-        officer::body_add_par(paste("Semilla para selección aleatoria:", rv$seed_atri), style = "Normal")
+          doc <- officer::read_docx() |>
+            officer::body_add_par("Muestreo Atributos", style = "heading 1") |>
+            officer::body_add_par("Parámetros", style = "heading 2") |>
+            officer::body_add_par(paste("Nombre del archivo de datos:", input$file4$name), style = "Normal") |>
+            officer::body_add_par(paste("Variable seleccionada:", input$variable4), style = "Normal") |>
+            officer::body_add_par(paste("Error Tolerable:", input$freq1_Atri), style = "Normal") |>
+            officer::body_add_par(paste("Error Esperado:", input$freq2_Atri), style = "Normal") |>
+            officer::body_add_par(paste("Nivel de confianza:", input$freq3_Atri), style = "Normal") |>
+            officer::body_add_par(paste("Selección de la distribución:", input$distri_3), style = "Normal") |>
+            officer::body_add_par("Información de Muestreo", style = "heading 2") |>
+            officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_atri), style = "Normal") |>
+            officer::body_add_par(paste("Semilla para selección aleatoria:", rv$seed_atri), style = "Normal")
 
-      datosOrigen  <- tablaOrigenPorce()
-      datosMuestra <- tablaMuestraPorce()
-      g <- generarGraficoPorcentajesAtri(datosOrigen, datosMuestra)
-      img <- .ggsave_tmp(g, 8, 6, 300)
-      on.exit(unlink(img), add = TRUE)
-      doc <- doc |>
-        officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
-        officer::body_add_img(src = img, width = 8, height = 6) |>
-        officer::body_add_par("Muestra Seleccionada", style = "heading 2") |>
-        officer::body_add_table(value = rv$muestra_atri, style = "table_template")
+          datosOrigen  <- tablaOrigenPorce()
+          datosMuestra <- tablaMuestraPorce()
+          g <- generarGraficoPorcentajesAtri(datosOrigen, datosMuestra)
+          img <- .ggsave_tmp(g, 8, 6, 300); on.exit(unlink(img), add = TRUE)
+          doc <- doc |>
+            officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
+            officer::body_add_img(src = img, width = 8, height = 6) |>
+            officer::body_add_par("Muestra Seleccionada", style = "heading 2") |>
+            officer::body_add_table(value = rv$muestra_atri, style = "table_template")
 
-      print(doc, target = file)
-    }, error = function(e) {
-      showNotification(paste("No se pudo generar el DOCX (Atributos):", conditionMessage(e)), type = "error", duration = 10)
-      validate(need(FALSE, "Fallo en la generación del reporte DOCX (Atributos)."))
-    })
-  }
-)
+          print(doc, target = file)
+        }, error = function(e) {
+          showNotification(paste("No se pudo generar el DOCX (Atributos):", conditionMessage(e)), type = "error", duration = 10)
+          validate(need(FALSE, "Fallo en la generación del reporte DOCX (Atributos)."))
+        })
+      }
+    )
+  }) # /observeEvent(update_Atri)
 
   # =====================================================================
   # 5) EVALUACIÓN (p6)  - fileInput: file5
@@ -828,6 +820,7 @@ output$downloadReport4 <- downloadHandler(
 
   # ---- 5.2 Acciones al presionar "Evaluación" --------------------------
   observeEvent(input$analizar, {
+
     # Tabla base
     output$Tabla2 <- reactable::renderReactable({
       reactable::reactable(DatosEval())
@@ -837,7 +830,7 @@ output$downloadReport4 <- downloadHandler(
     output$ScatterPlot <- highcharter::renderHighchart({
       req(DatosEval())
       dd <- DatosEval()
-      hc <- highcharter::hchart(dd, "scatter", highcharter::hcaes(x = Observado, y = Auditado)) %>%
+      highcharter::hchart(dd, "scatter", highcharter::hcaes(x = Observado, y = Auditado)) %>%
         highcharter::hc_add_series(
           data = highcharter::list_parse(data.frame(x = c(0, max(dd$Observado, na.rm = TRUE)),
                                                     y = c(0, max(dd$Observado, na.rm = TRUE)))),
@@ -845,7 +838,6 @@ output$downloadReport4 <- downloadHandler(
         ) %>%
         highcharter::hc_chart(zoomType = "xy") %>%
         highcharter::hc_exporting(enabled = TRUE)
-      hc
     })
 
     # Tabla de diferencias
@@ -853,7 +845,7 @@ output$downloadReport4 <- downloadHandler(
       reactable::reactable(Diferencias())
     })
 
-    # Indicadores riesgo (tabla descriptiva)
+    # Indicadores riesgo
     IndicadoresRiesgo <- function(datos) {
       suma_obs <- round(sum(datos$Observado, na.rm = TRUE), 1)
       suma_aud <- round(sum(datos$Auditado, na.rm = TRUE), 1)
@@ -883,7 +875,7 @@ output$downloadReport4 <- downloadHandler(
       reactable::reactable(IndicadoresRiesgo(DatosEval()))
     })
 
-    # Scatter con límites de confianza (bandas aproximadas)
+    # Scatter con límites de confianza (bandas aprox.)
     output$ScatterPlot_limit <- highcharter::renderHighchart({
       req(DatosEval())
       dd <- DatosEval()
@@ -992,68 +984,72 @@ output$downloadReport4 <- downloadHandler(
 
   output$downloadReport5 <- downloadHandler(
     filename = function() paste0("Evaluacion_Auditoria_", Sys.Date(), ".docx"),
+    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     content  = function(file) {
-      req(data5(), input$select_var1, input$select_var2, DatosEval(), Diferencias())
+      tryCatch({
+        if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
+        req(data5(), input$select_var1, input$select_var2, DatosEval())
 
-      doc <- officer::read_docx() |>
-        officer::body_add_par("Evaluación", style = "heading 1") |>
-        officer::body_add_par("Parámetros", style = "heading 2") |>
-        officer::body_add_par(paste("Nombre del archivo:", input$file5$name), style = "Normal") |>
-        officer::body_add_par(paste("Variable Observada:", input$select_var1), style = "Normal") |>
-        officer::body_add_par(paste("Variable Auditada:",  input$select_var2), style = "Normal") |>
-        officer::body_add_par("1. Análisis de Diferencias", style = "heading 2")
+        doc <- officer::read_docx() |>
+          officer::body_add_par("Evaluación", style = "heading 1") |>
+          officer::body_add_par("Parámetros", style = "heading 2") |>
+          officer::body_add_par(paste("Nombre del archivo:", input$file5$name), style = "Normal") |>
+          officer::body_add_par(paste("Variable Observada:", input$select_var1), style = "Normal") |>
+          officer::body_add_par(paste("Variable Auditada:",  input$select_var2), style = "Normal") |>
+          officer::body_add_par("1. Análisis de Diferencias", style = "heading 2")
 
-      if (!is.null(Diferencias()) && nrow(Diferencias()) > 0) {
-        doc <- doc |> officer::body_add_table(Diferencias(), style = "table_template")
-      }
+        if (!is.null(Diferencias()) && nrow(Diferencias()) > 0) {
+          doc <- doc |> officer::body_add_table(Diferencias(), style = "table_template")
+        }
 
-      p1 <- EvalScatterPlot(DatosEval()); img1 <- .ggsave_tmp(p1, 7, 5, 300)
-      doc <- doc |>
-        officer::body_add_par("Gráfico de dispersión Observado vs Auditado", style = "heading 2") |>
-        officer::body_add_img(src = img1, width = 7, height = 5)
-
-      # Indicadores de riesgo
-      IndicadoresRiesgo <- function(datos) {
-        suma_obs <- round(sum(datos$Observado, na.rm = TRUE), 1)
-        suma_aud <- round(sum(datos$Auditado, na.rm = TRUE), 1)
-        n_obs <- nrow(datos); n_aud <- nrow(datos)
-        promedio_obs <- round(mean(datos$Observado, na.rm = TRUE), 1)
-        promedio_aud <- round(mean(datos$Auditado, na.rm = TRUE), 1)
-        conteo_dif <- sum(datos$Observado != datos$Auditado, na.rm = TRUE)
-        sobrev <- sum(datos$Observado > datos$Auditado, na.rm = TRUE)
-        infrav <- sum(datos$Observado < datos$Auditado, na.rm = TRUE)
-        suma_sobrev <- round(sum(datos$Observado[datos$Observado > datos$Auditado] - datos$Auditado[datos$Observado > datos$Auditado], na.rm = TRUE), 1)
-        suma_infrav <- round(sum(datos$Auditado[datos$Observado < datos$Auditado] - datos$Observado[datos$Observado < datos$Auditado], na.rm = TRUE), 1)
-        dif_total <- round(sum(abs(datos$Observado - datos$Auditado), na.rm = TRUE), 1)
-        porcentaje_dif <- round((dif_total / max(suma_aud, 1e-9)) * 100, 1)
-        data.frame(
-          Indicador = c("Suma total Observados","Suma total Auditados","n Observados","n Auditados",
-                        "Monto promedio Observado","Monto promedio Auditado","Conteo Observados vs Auditado",
-                        "Cantidad de sobrevaloraciones","Cantidad de infravaloraciones",
-                        "Diferencia total Observados y Auditados","Suma de sobrevaloraciones",
-                        "Suma de infravaloraciones","Porcentaje de diferencia"),
-          Valor = c(suma_obs, suma_aud, n_obs, n_aud, promedio_obs, promedio_aud, conteo_dif,
-                    sobrev, infrav, dif_total, suma_sobrev, suma_infrav, porcentaje_dif)
-        )
-      }
-      doc <- doc |>
-        officer::body_add_par("3. Indicadores de Riesgo", style = "heading 2") |>
-        officer::body_add_table(IndicadoresRiesgo(DatosEval()), style = "table_template")
-
-      p2 <- ScatterPlotLim(DatosEval()); img2 <- .ggsave_tmp(p2, 7, 5, 300)
-      doc <- doc |>
-        officer::body_add_par("Scatter Plot con Límites de Confianza", style = "heading 2") |>
-        officer::body_add_img(src = img2, width = 7, height = 5)
-
-      if (!is.null(rv$eval_decision)) {
+        p1 <- EvalScatterPlot(DatosEval()); img1 <- .ggsave_tmp(p1, 7, 5, 300); on.exit(unlink(img1), add = TRUE)
         doc <- doc |>
-          officer::body_add_par("3. Criterio empírico de la evaluación de la auditoría", style = "heading 2") |>
-          officer::body_add_table(rv$eval_decision, style = "table_template")
-      }
+          officer::body_add_par("Gráfico de dispersión Observado vs Auditado", style = "heading 2") |>
+          officer::body_add_img(src = img1, width = 7, height = 5)
 
-      print(doc, target = file)
-      unlink(img1); unlink(img2)
+        IndicadoresRiesgo <- function(datos) {
+          suma_obs <- round(sum(datos$Observado, na.rm = TRUE), 1)
+          suma_aud <- round(sum(datos$Auditado, na.rm = TRUE), 1)
+          n_obs <- nrow(datos); n_aud <- nrow(datos)
+          promedio_obs <- round(mean(datos$Observado, na.rm = TRUE), 1)
+          promedio_aud <- round(mean(datos$Auditado, na.rm = TRUE), 1)
+          conteo_dif <- sum(datos$Observado != datos$Auditado, na.rm = TRUE)
+          sobrev <- sum(datos$Observado > datos$Auditado, na.rm = TRUE)
+          infrav <- sum(datos$Observado < datos$Auditado, na.rm = TRUE)
+          suma_sobrev <- round(sum(datos$Observado[datos$Observado > datos$Auditado] - datos$Auditado[datos$Observado > datos$Auditado], na.rm = TRUE), 1)
+          suma_infrav <- round(sum(datos$Auditado[datos$Observado < datos$Auditado] - datos$Observado[datos$Observado < datos$Auditado], na.rm = TRUE), 1)
+          dif_total <- round(sum(abs(datos$Observado - datos$Auditado), na.rm = TRUE), 1)
+          porcentaje_dif <- round((dif_total / max(suma_aud, 1e-9)) * 100, 1)
+          data.frame(
+            Indicador = c("Suma total Observados","Suma total Auditados","n Observados","n Auditados",
+                          "Monto promedio Observado","Monto promedio Auditado","Conteo Observados vs Auditado",
+                          "Cantidad de sobrevaloraciones","Cantidad de infravaloraciones",
+                          "Diferencia total Observados y Auditados","Suma de sobrevaloraciones",
+                          "Suma de infravaloraciones","Porcentaje de diferencia"),
+            Valor = c(suma_obs, suma_aud, n_obs, n_aud, promedio_obs, promedio_aud, conteo_dif,
+                      sobrev, infrav, dif_total, suma_sobrev, suma_infrav, porcentaje_dif)
+          )
+        }
+        doc <- doc |>
+          officer::body_add_par("3. Indicadores de Riesgo", style = "heading 2") |>
+          officer::body_add_table(IndicadoresRiesgo(DatosEval()), style = "table_template")
+
+        p2 <- ScatterPlotLim(DatosEval()); img2 <- .ggsave_tmp(p2, 7, 5, 300); on.exit(unlink(img2), add = TRUE)
+        doc <- doc |>
+          officer::body_add_par("Scatter Plot con Límites de Confianza", style = "heading 2") |>
+          officer::body_add_img(src = img2, width = 7, height = 5)
+
+        if (!is.null(rv$eval_decision)) {
+          doc <- doc |>
+            officer::body_add_par("4. Criterio empírico de la evaluación de la auditoría", style = "heading 2") |>
+            officer::body_add_table(rv$eval_decision, style = "table_template")
+        }
+
+        print(doc, target = file)
+      }, error = function(e) {
+        showNotification(paste("No se pudo generar el DOCX (Evaluación):", conditionMessage(e)), type = "error", duration = 10)
+        validate(need(FALSE, "Fallo en la generación del reporte DOCX (Evaluación)."))
+      })
     }
   )
-
 }

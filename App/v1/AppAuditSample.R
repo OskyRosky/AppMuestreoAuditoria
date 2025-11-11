@@ -3,114 +3,97 @@
 #                    Lanzador principal (runner)                    #
 #####################################################################
 
-########################
-#  Opciones generales  #
-########################
-options(shiny.maxRequestSize = 100 * 1024 * 1024)  # 100 MB para uploads
+#####################################################################
+#                  AppAuditSample.R  — Lanzador Shiny               #
+#                (v1/AppAuditSample.R  + Scripts_dashboard/)        #
+#####################################################################
+
+# ----- Opciones generales
+options(shiny.maxRequestSize = 100 * 1024^2)   # 100 MB
 options(encoding = "UTF-8")
-options(scipen = 999)  # evitar notación científica
-set.seed(as.integer(Sys.time()))  # semilla variable reproducible por sesión
+options(scipen   = 999)
+set.seed(as.integer(Sys.time()))
 
-########################
-#  Raíz y directorios  #
-########################
-# Requiere que Librerias.R instale/cargue {here}. Si no, cargamos mínimo aquí.
-suppressWarnings(suppressMessages({
-  if (!requireNamespace("here", quietly = TRUE)) install.packages("here", quiet = TRUE)
-  library(here)
-}))
+# ----- Localiza la carpeta del script (NO depende de {here})
+script_dir <- (function() {
+  ca <- commandArgs(trailingOnly = FALSE)
+  m  <- grep("^--file=", ca)
+  if (length(m)) return(dirname(normalizePath(sub("^--file=", "", ca[m]))))
+  if (!is.null(sys.frames()[[1]]$ofile)) return(dirname(normalizePath(sys.frames()[[1]]$ofile)))
+  normalizePath(getwd())
+})()
 
-# Intentamos ubicar la carpeta de scripts de forma flexible:
-# 1) App/v1/Scripts_dashboard (estructura propuesta)
-# 2) Scripts_dashboard (ejecutado desde la carpeta App/v1)
-# 3) Directorio del archivo actual (fallback)
-cand <- c(
-  here::here("App", "v1", "Scripts_dashboard"),
-  here::here("Scripts_dashboard")
-)
-scripts_dir <- cand[file.exists(cand) | dir.exists(cand)]
-if (length(scripts_dir) == 0) {
-  # Fallback final: intenta usar el wd actual
-  scripts_dir <- getwd()
-  warning("No se encontró 'Scripts_dashboard'. Usando getwd(): ", scripts_dir)
-} else {
-  scripts_dir <- scripts_dir[1]
+setwd(script_dir)  # ancla paths relativos al directorio del script
+
+scripts_dir <- file.path(script_dir, "Scripts_dashboard")
+if (!dir.exists(scripts_dir)) {
+  stop("No se encontró la carpeta 'Scripts_dashboard' en: ", scripts_dir,
+       "\nVerifica que esté al lado de AppAuditSample.R.")
 }
 cat("📂 Scripts dir: ", scripts_dir, "\n", sep = "")
 
-#################
-#   Sources     #
-#################
-# Cargamos en orden estricto para que `ui` y `server` existan al final.
-# chdir = TRUE permite que los paths relativos dentro de cada script funcionen.
-# ⚠️ Cambio clave: local = .GlobalEnv para que los objetos queden disponibles para ui.R
-cargar <- function(x) {
-  archivo <- file.path(scripts_dir, x)
-  if (!file.exists(archivo)) stop("No existe: ", archivo)
-  # Antes: source(..., local = TRUE, ...)
-  source(archivo, local = .GlobalEnv, chdir = TRUE, encoding = "UTF-8")
-  cat("✅ Cargado: ", x, "\n", sep = "")
+# ----- Helper para source en orden y en el GlobalEnv
+.cargar <- function(fname) {
+  fpath <- file.path(scripts_dir, fname)
+  if (!file.exists(fpath)) stop("No existe: ", fpath)
+  source(fpath, local = .GlobalEnv, chdir = TRUE, encoding = "UTF-8")
+  cat("✅ Cargado: ", fname, "\n", sep = "")
 }
 
-# 1) Dependencias
-cargar("Librerias.R")    # aquí ya queda cargado {here} y demás libs
-# 2) Parámetros
-if (file.exists(file.path(scripts_dir, "Parametros.R"))) cargar("Parametros.R")
-# 3) Layout/UI files
-cargar("header.R")
-cargar("sider.R")
-cargar("body.R")
+# 1) Dependencias (instala/carga). Mantén tu lógica dentro de este archivo.
+.cargar("Librerias.R")
 
-# Evita confusiones con la función base body()
-if (is.function(get("body", envir = .GlobalEnv))) stop("El objeto `body` es una función; renómbralo en body.R (p.ej. body_ui).")
+# 2) Parámetros (si existe)
+if (file.exists(file.path(scripts_dir, "Parametros.R"))) .cargar("Parametros.R")
 
-cargar("ui.R")
-# 4) Lógica del servidor
-cargar("server.R")
+# 3) Partes UI (orden importa)
+.cargar("header.R")
+.cargar("sider.R")
+.cargar("body.R")
+.cargar("ui.R")       # define `ui` usando header/sidebar/body
 
-###################################
-#   Host/Port y utilitarios IP    #
-###################################
-# Permite sobreescribir con variables de entorno:
-APP_HOST <- Sys.getenv("APP_HOST", unset = getOption("shiny.host", "127.0.0.1"))
-APP_PORT <- as.integer(Sys.getenv("APP_PORT", unset = "1001"))
+# 4) Lógica de servidor
+.cargar("server.R")   # define `server`
 
-# Intento opcional de mostrar IP local (no bloqueante si falla)
-resolver_ip_local <- function() {
+# Sanidad mínima
+stopifnot(exists("ui",    inherits = TRUE))
+stopifnot(exists("server",inherits = TRUE))
+
+# ----- Host/Port (se pueden sobreescribir con variables de entorno)
+APP_HOST <- Sys.getenv("APP_HOST", unset = "0.0.0.0")
+APP_PORT <- as.integer(Sys.getenv("APP_PORT", unset = "8000"))
+
+# Info útil de acceso en LAN (best-effort)
+.show_ip <- function() {
+  ip <- NA_character_
   os <- Sys.info()[["sysname"]]
-  out <- NA_character_
   try({
-    if (identical(os, "Darwin")) {                 # macOS
-      out <- system2("ipconfig", c("getifaddr", "en0"), stdout = TRUE, stderr = FALSE)
-      if (length(out) == 0 || is.na(out)) out <- system2("ipconfig", c("getifaddr", "en1"), stdout = TRUE, stderr = FALSE)
+    if (identical(os, "Darwin")) {
+      ip <- system2("ipconfig", c("getifaddr", "en0"), stdout = TRUE, stderr = FALSE)
+      if (!length(ip) || is.na(ip) || !nzchar(ip)) {
+        ip <- system2("ipconfig", c("getifaddr", "en1"), stdout = TRUE, stderr = FALSE)
+      }
     } else if (identical(os, "Linux")) {
-      out <- system("hostname -I", intern = TRUE)
-      out <- strsplit(out, "\\s+")[[1]][1]
-    } else if (grepl("Windows", os, ignore.case = TRUE)) {
-      lines <- system("ipconfig", intern = TRUE)
-      ipline <- grep("IPv4", lines, value = TRUE)
-      if (length(ipline)) out <- sub(".*?:\\s*", "", ipline[1])
+      ip <- system("hostname -I", intern = TRUE)
+      ip <- strsplit(ip, "\\s+")[[1]][1]
+    } else if (grepl("Windows", os, TRUE)) {
+      ln <- system("ipconfig", intern = TRUE)
+      l4 <- grep("IPv4", ln, value = TRUE)
+      if (length(l4)) ip <- sub(".*?:\\s*", "", l4[1])
     }
   }, silent = TRUE)
-  out[1]
+  if (length(ip) && !is.na(ip) && nzchar(ip)) {
+    cat("🌐 Acceso en red local: http://", ip, ":", APP_PORT, "/\n", sep = "")
+  }
 }
-ip_local <- resolver_ip_local()
-if (!is.na(ip_local) && nzchar(ip_local)) {
-  cat("🌐 IP local detectada: http://", ip_local, ":", APP_PORT, "/\n", sep = "")
-}
+.show_ip()
 
-###################################
-#        Levantar la App          #
-###################################
 cat("🚀 Iniciando Shiny en ", APP_HOST, ":", APP_PORT, " …\n", sep = "")
 
-# ui y server deben existir tras haber cargado ui.R y server.R
-stopifnot(exists("ui"), exists("server"))
-
-# Ejecuta la app
+# ----- Ejecutar
 shiny::runApp(
   list(ui = ui, server = server),
   host = APP_HOST,
   port = APP_PORT,
-  launch.browser = interactive()  # abre navegador si estás en sesión interactiva
+  launch.browser = interactive()
 )

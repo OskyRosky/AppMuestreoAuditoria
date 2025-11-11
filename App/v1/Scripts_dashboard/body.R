@@ -1,18 +1,30 @@
 ###############################################################
 # 📄 body.R — Contenido principal del dashboard (UI)
 # -------------------------------------------------------------
-# - Mantiene TODOS los IDs y tabNames originales (no rompe server).
-# - Solo añade comentarios, organiza secciones y centraliza estilos.
-# - Pequeñas mejoras de legibilidad (sin lógica nueva).
+# Cambios clave:
+#  • Agregada franja de aviso cuando APP_HEAVY ≠ TRUE (usa output.showDownloads)  # NEW
+#  • Los botones de descarga de reportes DOCX están dentro de conditionalPanel     # NEW
 ###############################################################
 
-# Estilo común para listas con viñetas
 .ul_style <- "list-style-type: disc; padding-left: 20px;"
 
-############################
-#          body            #
-############################
 body <- shinydashboard::dashboardBody(
+
+  #################################################################
+  #                       AVISO GLOBAL (NEW)                      #
+  #################################################################
+  conditionalPanel(
+    condition = "!output.showDownloads",  # NEW
+    tags$div(
+      style = "background:#fff3cd;border:1px solid #ffeeba;padding:12px;margin:10px 0;border-radius:6px;",
+      tags$b("Aviso: "),
+      "Los reportes .docx están deshabilitados porque la app no se está ejecutando en modo pesado ",
+      tags$code("APP_HEAVY=TRUE"),
+      ". Habilítalo e instala ",
+      tags$code("officer, flextable"),
+      " para activar las descargas de reportes."
+    )
+  ),
 
   #################################################################
   #                       CONTENEDOR DE TABS                      #
@@ -20,10 +32,8 @@ body <- shinydashboard::dashboardBody(
   shinydashboard::tabItems(
 
     #################################################################
-    #################################################################
     #                           PÁG. p1                             #
     #                        📘 PRESENTACIÓN                        #
-    #################################################################
     #################################################################
     shinydashboard::tabItem(
       tabName = "p1",
@@ -52,7 +62,6 @@ body <- shinydashboard::dashboardBody(
       h4("Utilice el botón gris en las apartados de Cargar  Datos para trabajar su conjunto de datos.", align = "left"),
       h4("Analizar", align = "left", style = "font-weight: bold"),
       h4("Siga las instrucciones específicas en cada sección para realizar el análisis requerido."),
-
       br(),
 
       # --- Estructura de la aplicación ---
@@ -83,7 +92,6 @@ body <- shinydashboard::dashboardBody(
         tags$li(h4("Analizar la distribución de la variable de interés.", align = "left")),
         tags$li(h4("Según el análisis de la distribución de la variable de interés, tener una mejor perspectiva del ajuste de la función de distribución.", align = "left"))
       ),
-
       br(),
 
       # --- Proceso de muestreo (resumen) ---
@@ -99,7 +107,6 @@ body <- shinydashboard::dashboardBody(
         tags$li(h4("Comparar las distribuciones entre los datos orginales y los obtenidos por la muestra.", align = "left")),
         tags$li(h4("Descargar los datos seleccionados en el proceso de muestreo (obtenidos por la muestra).", align = "left"))
       ),
-
       br(),
 
       # --- Muestreo por Atributos (resumen) ---
@@ -115,7 +122,6 @@ body <- shinydashboard::dashboardBody(
         tags$li(h4("Comparar los porcentajes de las categorías entre los datos orginales y los obtenidos por la muestra.", align = "left")),
         tags$li(h4("Descargar los datos seleccionados en el proceso de muestreo (obtenidos por la muestra).", align = "left"))
       ),
-
       br(),
 
       # --- Evaluación (resumen) ---
@@ -155,12 +161,9 @@ body <- shinydashboard::dashboardBody(
       )
     ),
 
-
-    #################################################################
     #################################################################
     #                           PÁG. p2                             #
     #                    📊 ANÁLISIS DESCRIPTIVO                    #
-    #################################################################
     #################################################################
     shinydashboard::tabItem(
       tabName = "p2",
@@ -178,11 +181,11 @@ body <- shinydashboard::dashboardBody(
         style = .ul_style,
         tags$li(h4("Conocer las principales estadísticas descriptivas de la variable seleccionada.", align = "left")),
         tags$li(h4("Visualizar la distribución de la variable seleccionada (densidad).", align = "left")),
-        tags$li(h4("Comparar la distribución de la variable seleccionada con respecto a una distribución de Poisson o Binomial.", align = "left")),
-        tags$li(h4("Descargar los resultados generados en formato '.docx'.", align = "left"))
+        tags$li(h4("Comparar la distribución con Poisson o Binomial.", align = "left")),
+        tags$li(h4("Descargar los resultados en formato '.docx'.", align = "left"))
       ),
       br(),
-      h4("Este último punto lo guiará en el proceso de la siguiente sección, en donde deberá seleccionar la distribución que se aproxima más al conjunto de datos en la determinación del tamaño de muestra."),
+      h4("Esto guiará la selección de distribución para el tamaño de muestra en la sección siguiente."),
       br(),
 
       # --- Carga de datos ---
@@ -208,21 +211,21 @@ body <- shinydashboard::dashboardBody(
       # --- Estadísticas descriptivas ---
       h3("Estadísticas descriptivas", align = "left"),
       br(),
-      h4("Se presentan las principales para el análisis de la variable numérica seleccionada."),
+      h4("Se presentan las principales para la variable numérica seleccionada."),
       reactableOutput("stats"),
       br(),
 
       # --- Distribución ---
       h3("Análisis de distribuciones", align = "left"),
       br(),
-      h4("Análisis de la densidad de la variable numérica seleccionada."),
+      h4("Densidad de la variable numérica seleccionada."),
       br(),
       highchartOutput("histogram1"),
 
       # --- Comparación de ajustes ---
       h3("Comparación de Ajuste de Distribuciones", align = "left"),
       br(),
-      h4("Por favor, guiarse según las siguientes gráficas de distribución."),
+      h4("Guía visual para elegir la distribución."),
       fluidRow(
         shinydashboard::box(
           title = "Comparación de distribuciones",
@@ -236,19 +239,20 @@ body <- shinydashboard::dashboardBody(
           )
         )
       ),
-      h4("Si posee datos aglomerados o consistentes en todo el rango de posibles valores, es mejor que opte por un ajuste Binomial. Caso contrario, si hay valores muy alejados o extremos, un ajuste de Poisson puede ser más adecuado.", align = "left"),
+      h4("Si hay valores muy extremos, Poisson puede ser más adecuado; si están más compactos, Binomial."),
+      br(),
 
       # --- Reporte ---
       h3("Descargar Reporte", align = "left"),
-      downloadButton("downloadReport1", "Descargar Reporte Análisis Descriptivo")
+      conditionalPanel(                                           # NEW
+        condition = "output.showDownloads",                       # NEW
+        downloadButton("downloadReport1", "Descargar Reporte Análisis Descriptivo")
+      )
     ),
 
-
-    #################################################################
     #################################################################
     #                           PÁG. p3                             #
     #                         🧮 MUESTREO MUM                       #
-    #################################################################
     #################################################################
     shinydashboard::tabItem(
       tabName = "p3",
@@ -266,9 +270,9 @@ body <- shinydashboard::dashboardBody(
         style = .ul_style,
         tags$li(h4("Calcular el tamaño de muestra.", align = "left")),
         tags$li(h4("Visualizar las unidades seleccionadas.", align = "left")),
-        tags$li(h4("Comparar los datos cargados vs los datos obtenidos por la muestra.", align = "left")),
-        tags$li(h4("Descargar los datos de la muestra en formato .csv, .txt o .xlsx.", align = "left")),
-        tags$li(h4("Descargar los resultados generados en formato '.docx'.", align = "left"))
+        tags$li(h4("Comparar los datos cargados vs los datos de la muestra.", align = "left")),
+        tags$li(h4("Descargar la muestra en .csv, .txt o .xlsx.", align = "left")),
+        tags$li(h4("Descargar los resultados en '.docx'.", align = "left"))
       ),
       br(),
 
@@ -292,8 +296,7 @@ body <- shinydashboard::dashboardBody(
       # --- Tamaño y selección ---
       h2("Muestreo: tamaño y selección", align = "left"),
       br(),
-      h4("El proceso de muestreo consta de dos etapas: selección del tamaño de la muestra y la selección de las unidades.", align = "left"),
-      h4("Primero se determina el tamaño de la muestra (tolerable, esperado, nivel de confianza). Luego se seleccionan las unidades (método Proporcional por Tamaño).", align = "left"),
+      h4("Primero tamaño (tolerable, esperado, confianza) y luego selección (PPT).", align = "left"),
       br(),
 
       h3("Cálculo de tamaño de muestra"),
@@ -369,7 +372,7 @@ body <- shinydashboard::dashboardBody(
       br(),
       fluidRow(
         shinydashboard::box(
-          title = "Comparación de distribuciones entre datos cargados y las unidaddes seleccionadas a partir de la muestra de datos",
+          title = "Comparación de distribuciones entre datos cargados y la muestra",
           status = "primary", solidHeader = TRUE, collapsible = TRUE,
           width = 8,
           highchartOutput("comp_dist_MUM")
@@ -382,15 +385,15 @@ body <- shinydashboard::dashboardBody(
       actionButton("show1_MUM", "Descargar archivo"),
       br(),
       h3("Descargar Reporte", align = "left"),
-      downloadButton("downloadReport2", "Descargar Reporte Muestreo MUM")
+      conditionalPanel(                                           # NEW
+        condition = "output.showDownloads",                       # NEW
+        downloadButton("downloadReport2", "Descargar Reporte Muestreo MUM")
+      )
     ),
 
-
-    #################################################################
     #################################################################
     #                           PÁG. p4                             #
     #                         🧮 MUESTREO LES                       #
-    #################################################################
     #################################################################
     shinydashboard::tabItem(
       tabName = "p4",
@@ -400,7 +403,7 @@ body <- shinydashboard::dashboardBody(
 
       h2("En esta sección:", align = "left"),
       br(),
-      h4("Se lleva a cabo el proceso de muestreo: tamaño y selección de las unidades según el LES.", align = "left"),
+      h4("Muestreo por LES: tamaño y selección.", align = "left"),
       br(),
       h4("Cargando los datos, usted podrá:"),
       br(),
@@ -408,9 +411,9 @@ body <- shinydashboard::dashboardBody(
         style = .ul_style,
         tags$li(h4("Calcular el tamaño de muestra.", align = "left")),
         tags$li(h4("Visualizar las unidades seleccionadas.", align = "left")),
-        tags$li(h4("Comparar los datos cargados vs los datos obtenidos por la muestra.", align = "left")),
-        tags$li(h4("Descargar los datos de la muestra.", align = "left")),
-        tags$li(h4("Descargar los resultados generados en formato '.docx'.", align = "left"))
+        tags$li(h4("Comparar datos cargados vs muestra.", align = "left")),
+        tags$li(h4("Descargar la muestra.", align = "left")),
+        tags$li(h4("Descargar resultados en '.docx'.", align = "left"))
       ),
       br(),
 
@@ -434,7 +437,7 @@ body <- shinydashboard::dashboardBody(
       # --- Tamaño y selección ---
       h2("Muestreo: tamaño y selección", align = "left"),
       br(),
-      h4("Primero seleccione el tamaño (tolerable, esperado, nivel de confianza) y luego las unidades (PPS).", align = "left"),
+      h4("Primero tamaño (tolerable, esperado, confianza) y luego unidades (PPS).", align = "left"),
       br(),
 
       h3("Cálculo de tamaño de muestra"),
@@ -519,7 +522,7 @@ body <- shinydashboard::dashboardBody(
       br(),
       fluidRow(
         shinydashboard::box(
-          title = "Comparación de distribuciones entre datos cargados y las unidades seleccionadas a partir de la muestra de datos",
+          title = "Comparación de distribuciones entre datos cargados y la muestra",
           status = "primary", solidHeader = TRUE, collapsible = TRUE,
           width = 8, highchartOutput("comp_dist_LES")
         )
@@ -532,15 +535,15 @@ body <- shinydashboard::dashboardBody(
       actionButton("show1_LES", "Descargar archivo"),
       br(),
       h3("Descargar Reporte", align = "left"),
-      downloadButton("downloadReport3", "Descargar Reporte Muestreo LES")
+      conditionalPanel(                                           # NEW
+        condition = "output.showDownloads",                       # NEW
+        downloadButton("downloadReport3", "Descargar Reporte Muestreo LES")
+      )
     ),
 
-
-    #################################################################
     #################################################################
     #                           PÁG. p5                             #
     #                     🧷 MUESTREO ATRIBUTOS                     #
-    #################################################################
     #################################################################
     shinydashboard::tabItem(
       tabName = "p5",
@@ -550,16 +553,16 @@ body <- shinydashboard::dashboardBody(
 
       h2("Se lleva a cabo el proceso de muestreo por atributos: tamaño y selección de las unidades.", align = "left"),
       br(),
-      h4("Una vez cargada la información y seleccionadas las variables correspondientes (observados/auditados), usted podrá:"),
+      h4("Una vez cargada la información y seleccionadas las variables de atributo, usted podrá:"),
       br(),
       tags$ul(
         style = .ul_style,
         tags$li(h4("Determinar niveles de error tolerable, esperado y nivel de confianza.", align = "left")),
         tags$li(h4("Determinar el tamaño de muestra.", align = "left")),
         tags$li(h4("Visualizar la muestra seleccionada.", align = "left")),
-        tags$li(h4("Comparar los porcentajes de categorías para originales vs muestra.", align = "left")),
+        tags$li(h4("Comparar porcentajes de categorías para originales vs muestra.", align = "left")),
         tags$li(h4("Descargar la muestra seleccionada.", align = "left")),
-        tags$li(h4("Descargar los resultados en formato '.docx'.", align = "left"))
+        tags$li(h4("Descargar los resultados en '.docx'.", align = "left"))
       ),
       br(),
 
@@ -582,7 +585,7 @@ body <- shinydashboard::dashboardBody(
       # --- Tamaño y selección ---
       h2("Muestreo: tamaño y selección", align = "left"),
       br(),
-      h4("Primero determine el tamaño (tolerable, esperado, confianza) y luego seleccione las unidades (PPS).", align = "left"),
+      h4("Primero determine el tamaño (tolerable, esperado, confianza) y luego seleccione unidades.", align = "left"),
       br(),
 
       h3("Cálculo de tamaño de muestra"),
@@ -669,15 +672,15 @@ body <- shinydashboard::dashboardBody(
       actionButton("show1_Atri", "Descargar archivo"),
       br(),
       h3("Descargar Reporte", align = "left"),
-      downloadButton("downloadReport4", "Descargar Reporte Muestreo Atributos")
+      conditionalPanel(                                           # NEW
+        condition = "output.showDownloads",                       # NEW
+        downloadButton("downloadReport4", "Descargar Reporte Muestreo Atributos")
+      )
     ),
 
-
-    #################################################################
     #################################################################
     #                           PÁG. p6                             #
     #                          🧾 EVALUACIÓN                        #
-    #################################################################
     #################################################################
     shinydashboard::tabItem(
       tabName = "p6",
@@ -687,15 +690,15 @@ body <- shinydashboard::dashboardBody(
 
       h2("En esta sección:", align = "left"),
       br(),
-      h4("Una vez cargada la información, y seleccionadas las variables correspondientes a los datos observados y auditados, usted podrá:", align = "left"),
+      h4("Comparación observados vs auditados; indicadores y umbrales.", align = "left"),
       br(),
       tags$ul(
         style = .ul_style,
-        tags$li(h4("Comparar la información de los datos observados vs los datos auditados.", align = "left")),
-        tags$li(h4("Valorar las diferencias de forma descriptiva.", align = "left")),
-        tags$li(h4("Analizar indicadores de riesgo en la comparación observados vs auditados.", align = "left")),
-        tags$li(h4("Evaluar criterios empíricos para el umbral máximo permitido o tolerable.", align = "left")),
-        tags$li(h4("Descargar los resultados generados en formato '.docx'.", align = "left"))
+        tags$li(h4("Comparar observados vs auditados.", align = "left")),
+        tags$li(h4("Valorar diferencias de forma descriptiva.", align = "left")),
+        tags$li(h4("Analizar indicadores de riesgo.", align = "left")),
+        tags$li(h4("Evaluar criterios empíricos (umbrales).", align = "left")),
+        tags$li(h4("Descargar resultados en '.docx'.", align = "left"))
       ),
       br(),
 
@@ -723,8 +726,7 @@ body <- shinydashboard::dashboardBody(
       # --- Resultados descriptivos ---
       h2("Comparar la información de los datos observados vs. los datos auditados."),
       br(),
-      h4("Se presentan los datos en forma de tabla, gráfico de dispersión y las diferencias encontradas.", align = "left"),
-      h4("Si desea, puede descargar los casos con diferencias.", align = "left"),
+      h4("Datos, gráfico de dispersión y diferencias.", align = "left"),
       br(),
 
       fluidRow(
@@ -755,10 +757,9 @@ body <- shinydashboard::dashboardBody(
       br(), br(),
 
       # --- Indicadores de riesgo ---
-      h2("Indicadores de riesgo en la comparación de la información de los datos observados vs los datos auditados."),
+      h2("Indicadores de riesgo en la comparación de datos."),
       br(),
-      h4("Los indicadores de riesgo son medidas que ayudan en la comparación entre los valores observados y auditados.", align = "left"),
-      h4("Se representan mediante una tabla de medidas y un gráfico de dispersión con intervalos de confianza.", align = "left"),
+      h4("Tabla de medidas y gráfico con intervalos de confianza.", align = "left"),
       br(),
 
       fluidRow(
@@ -781,10 +782,10 @@ body <- shinydashboard::dashboardBody(
       # --- Criterios empíricos ---
       h2("Criterio empírico del máximo umbral permitido o tolerado."),
       br(),
-      h4("Seleccione límites permisibles (criterios) para evaluar si las diferencias son aceptables.", align = "left"),
+      h4("Seleccione límites permisibles y ejecute la evaluación.", align = "left"),
       br(),
 
-      h3("Nota: dentro de la tabla 'criterios de evaluación', seleccione los valores máximos tolerables y presione 'Evaluación'"),
+      h3("Nota: en 'criterios de evaluación', seleccione valores y presione 'Evaluación'"),
       fluidRow(
         shinydashboard::box(
           title = "Criterios de Evaluación",
@@ -811,7 +812,10 @@ body <- shinydashboard::dashboardBody(
 
       br(),
       h3("Descargar Reporte", align = "left"),
-      downloadButton("downloadReport5", "Descargar Reporte Evaluación")
+      conditionalPanel(                                           # NEW
+        condition = "output.showDownloads",                       # NEW
+        downloadButton("downloadReport5", "Descargar Reporte Evaluación")
+      )
     )
 
   ) # /tabItems
