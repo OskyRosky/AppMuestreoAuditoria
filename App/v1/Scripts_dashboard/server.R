@@ -92,6 +92,13 @@ server <- function(input, output, session) {
     eval_decision = NULL
   )
 
+# ---- 0.X Flag de modo "pesado" y control de visibilidad de descargas DOCX ----
+is_heavy <- identical(tolower(Sys.getenv("APP_HEAVY", "true")), "true")
+
+# Exponer una señal reactiva al UI para ocultar botones DOCX si no hay dependencias
+output$showDownloads <- reactive({ is_heavy })
+outputOptions(output, "showDownloads", suspendWhenHidden = FALSE)
+
   # =====================================================================
   # 1) ANÁLISIS DESCRIPTIVO (p1)  - fileInput: file1  - outputs: stats, histogram1, binomialPlot, poissonPlot, downloadReport1
   # =====================================================================
@@ -183,11 +190,19 @@ server <- function(input, output, session) {
   })
 
   # ---- 1.5 Reporte descriptivo (.docx) ---------------------------------
-  output$downloadReport1 <- downloadHandler(
-    filename = function() paste0("Reporte_Analisis_Descriptivo_", Sys.Date(), ".docx"),
-    content = function(file) {
+ 
+ output$downloadReport1 <- downloadHandler(
+  filename = function() paste0("Reporte_Analisis_Descriptivo_", Sys.Date(), ".docx"),
+  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  content = function(file) {
+    tryCatch({
       req(data1(), input$variable1)
       .need_numeric(data1(), input$variable1)
+
+      if (!requireNamespace("officer", quietly = TRUE) ||
+          !requireNamespace("flextable", quietly = TRUE)) {
+        stop("Faltan paquetes 'officer' y/o 'flextable'.")
+      }
 
       # Documento
       doc <- officer::read_docx() |>
@@ -224,12 +239,16 @@ server <- function(input, output, session) {
         ggplot2::geom_density(fill = 'skyblue', color = 'blue', alpha = 0.5) +
         ggplot2::labs(title = paste("Distribución de", input$variable1))
       img <- .ggsave_tmp(p, 5, 4, 300)
+      on.exit(unlink(img), add = TRUE)
       doc <- doc |> officer::body_add_img(src = img, width = 5, height = 4)
 
       print(doc, target = file)
-      unlink(img)
-    }
-  )
+    }, error = function(e) {
+      showNotification(paste("No se pudo generar el DOCX (Descriptivo):", conditionMessage(e)), type = "error", duration = 10)
+      validate(need(FALSE, "Fallo en la generación del reporte DOCX (Descriptivo)."))
+    })
+  }
+)
 
   # =====================================================================
   # 2) MUESTREO MUM (p3)  - fileInput: file2
@@ -366,10 +385,14 @@ server <- function(input, output, session) {
       ggplot2::theme_minimal()
   }
 
-  output$downloadReport2 <- downloadHandler(
-    filename = function() paste0("Muestreo_MUM_", Sys.Date(), ".docx"),
-    content = function(file) {
+output$downloadReport2 <- downloadHandler(
+  filename = function() paste0("Muestreo_MUM_", Sys.Date(), ".docx"),
+  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  content = function(file) {
+    tryCatch({
+      if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
       req(data2(), input$variable2, rv$sample_size_mum, rv$seed_mum, rv$muestra_mum)
+
       doc <- officer::read_docx() |>
         officer::body_add_par("Muestreo por Unidades Monetarias", style = "heading 1") |>
         officer::body_add_par("Parámetros", style = "heading 2") |>
@@ -385,6 +408,7 @@ server <- function(input, output, session) {
 
       g <- generarGraficoDensidadMUM(data2(), rv$muestra_mum, input$variable2)
       img <- .ggsave_tmp(g, 7, 5, 300)
+      on.exit(unlink(img), add = TRUE)
       doc <- doc |>
         officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
         officer::body_add_img(src = img, width = 7, height = 5) |>
@@ -392,9 +416,12 @@ server <- function(input, output, session) {
         officer::body_add_table(rv$muestra_mum, style = "table_template")
 
       print(doc, target = file)
-      unlink(img)
-    }
-  )
+    }, error = function(e) {
+      showNotification(paste("No se pudo generar el DOCX (MUM):", conditionMessage(e)), type = "error", duration = 10)
+      validate(need(FALSE, "Fallo en la generación del reporte DOCX (MUM)."))
+    })
+  }
+)
 
   # =====================================================================
   # 3) MUESTREO LES (p4)  - fileInput: file3
@@ -554,10 +581,14 @@ server <- function(input, output, session) {
       ggplot2::theme_minimal()
   }
 
-  output$downloadReport3 <- downloadHandler(
-    filename = function() paste0("Muestreo_LES_", Sys.Date(), ".docx"),
-    content = function(file) {
+output$downloadReport3 <- downloadHandler(
+  filename = function() paste0("Muestreo_LES_", Sys.Date(), ".docx"),
+  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  content = function(file) {
+    tryCatch({
+      if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
       req(data3(), input$variable3, rv$sample_size_les, rv$seed_les, rv$muestra_les)
+
       doc <- officer::read_docx() |>
         officer::body_add_par("Muestreo LES", style = "heading 1") |>
         officer::body_add_par("Parámetros", style = "heading 2") |>
@@ -573,6 +604,7 @@ server <- function(input, output, session) {
 
       g <- generarGraficoDensidadLES(data3(), rv$muestra_les, input$variable3)
       img <- .ggsave_tmp(g, 7, 5, 300)
+      on.exit(unlink(img), add = TRUE)
       doc <- doc |>
         officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
         officer::body_add_img(src = img, width = 7, height = 5) |>
@@ -580,9 +612,12 @@ server <- function(input, output, session) {
         officer::body_add_table(rv$muestra_les, style = "table_template")
 
       print(doc, target = file)
-      unlink(img)
-    }
-  )
+    }, error = function(e) {
+      showNotification(paste("No se pudo generar el DOCX (LES):", conditionMessage(e)), type = "error", duration = 10)
+      validate(need(FALSE, "Fallo en la generación del reporte DOCX (LES)."))
+    })
+  }
+)
 
   # =====================================================================
   # 4) MUESTREO POR ATRIBUTOS (p5)  - fileInput: file4
@@ -716,38 +751,45 @@ server <- function(input, output, session) {
         ggplot2::theme(legend.position = "bottom")
     }
 
-    output$downloadReport4 <- downloadHandler(
-      filename = function() paste0("Muestreo_Atributos_", Sys.Date(), ".docx"),
-      content = function(file) {
-        req(data4(), input$variable4, rv$sample_size_atri, rv$seed_atri, rv$muestra_atri)
-        doc <- officer::read_docx() |>
-          officer::body_add_par("Muestreo Atributos", style = "heading 1") |>
-          officer::body_add_par("Parámetros", style = "heading 2") |>
-          officer::body_add_par(paste("Nombre del archivo de datos:", input$file4$name), style = "Normal") |>
-          officer::body_add_par(paste("Variable seleccionada:", input$variable4), style = "Normal") |>
-          officer::body_add_par(paste("Error Tolerable:", input$freq1_Atri), style = "Normal") |>
-          officer::body_add_par(paste("Error Esperado:", input$freq2_Atri), style = "Normal") |>
-          officer::body_add_par(paste("Nivel de confianza:", input$freq3_Atri), style = "Normal") |>
-          officer::body_add_par(paste("Selección de la distribución:", input$distri_3), style = "Normal") |>
-          officer::body_add_par("Información de Muestreo", style = "heading 2") |>
-          officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_atri), style = "Normal") |>
-          officer::body_add_par(paste("Semilla para selección aleatoria:", rv$seed_atri), style = "Normal")
+output$downloadReport4 <- downloadHandler(
+  filename = function() paste0("Muestreo_Atributos_", Sys.Date(), ".docx"),
+  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  content = function(file) {
+    tryCatch({
+      if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
+      req(data4(), input$variable4, rv$sample_size_atri, rv$seed_atri, rv$muestra_atri)
 
-        datosOrigen  <- tablaOrigenPorce()
-        datosMuestra <- tablaMuestraPorce()
-        g <- generarGraficoPorcentajesAtri(datosOrigen, datosMuestra)
-        img <- .ggsave_tmp(g, 8, 6, 300)
-        doc <- doc |>
-          officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
-          officer::body_add_img(src = img, width = 8, height = 6) |>
-          officer::body_add_par("Muestra Seleccionada", style = "heading 2") |>
-          officer::body_add_table(value = rv$muestra_atri, style = "table_template")
+      doc <- officer::read_docx() |>
+        officer::body_add_par("Muestreo Atributos", style = "heading 1") |>
+        officer::body_add_par("Parámetros", style = "heading 2") |>
+        officer::body_add_par(paste("Nombre del archivo de datos:", input$file4$name), style = "Normal") |>
+        officer::body_add_par(paste("Variable seleccionada:", input$variable4), style = "Normal") |>
+        officer::body_add_par(paste("Error Tolerable:", input$freq1_Atri), style = "Normal") |>
+        officer::body_add_par(paste("Error Esperado:", input$freq2_Atri), style = "Normal") |>
+        officer::body_add_par(paste("Nivel de confianza:", input$freq3_Atri), style = "Normal") |>
+        officer::body_add_par(paste("Selección de la distribución:", input$distri_3), style = "Normal") |>
+        officer::body_add_par("Información de Muestreo", style = "heading 2") |>
+        officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_atri), style = "Normal") |>
+        officer::body_add_par(paste("Semilla para selección aleatoria:", rv$seed_atri), style = "Normal")
 
-        print(doc, target = file)
-        unlink(img)
-      }
-    )
-  })
+      datosOrigen  <- tablaOrigenPorce()
+      datosMuestra <- tablaMuestraPorce()
+      g <- generarGraficoPorcentajesAtri(datosOrigen, datosMuestra)
+      img <- .ggsave_tmp(g, 8, 6, 300)
+      on.exit(unlink(img), add = TRUE)
+      doc <- doc |>
+        officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
+        officer::body_add_img(src = img, width = 8, height = 6) |>
+        officer::body_add_par("Muestra Seleccionada", style = "heading 2") |>
+        officer::body_add_table(value = rv$muestra_atri, style = "table_template")
+
+      print(doc, target = file)
+    }, error = function(e) {
+      showNotification(paste("No se pudo generar el DOCX (Atributos):", conditionMessage(e)), type = "error", duration = 10)
+      validate(need(FALSE, "Fallo en la generación del reporte DOCX (Atributos)."))
+    })
+  }
+)
 
   # =====================================================================
   # 5) EVALUACIÓN (p6)  - fileInput: file5
