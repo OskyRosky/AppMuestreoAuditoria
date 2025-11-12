@@ -31,6 +31,49 @@ server <- function(input, output, session) {
     )
   }
 
+# --- Helper XLSX seguro ---
+.sanitize_for_xlsx <- function(df) {
+  if (inherits(df, "tbl_df")) df <- as.data.frame(df)
+  for (nm in names(df)) {
+    x <- df[[nm]]
+    if (is.list(x)) {
+      df[[nm]] <- vapply(x, function(v) {
+        if (length(v) == 0) "" else paste(as.character(v), collapse = ", ")
+      }, FUN.VALUE = character(1))
+    } else if (is.factor(x)) {
+      df[[nm]] <- as.character(x)
+    } else if (inherits(x, "POSIXt") || inherits(x, "Date")) {
+      df[[nm]] <- as.character(x)
+    }
+  }
+  df
+}
+
+# --- Helper para gráficos de densidad con highcharter ---
+.hc_density <- function(x, name = "Variable", color = "#1f77b4") {
+  if (!requireNamespace("highcharter", quietly = TRUE)) {
+    stop("Falta el paquete 'highcharter'.")
+  }
+
+  # Calcula densidad
+  dens <- stats::density(x, na.rm = TRUE)
+  df <- data.frame(x = dens$x, y = dens$y)
+
+  # Construye gráfico interactivo
+  highcharter::highchart() |>
+    highcharter::hc_chart(type = "areaspline") |>
+    highcharter::hc_add_series(
+      data = list_parse2(df),
+      name = name,
+      color = color,
+      fillOpacity = 0.5
+    ) |>
+    highcharter::hc_title(text = "Distribución de Densidad") |>
+    highcharter::hc_xAxis(title = list(text = "Valor")) |>
+    highcharter::hc_yAxis(title = list(text = "Densidad")) |>
+    highcharter::hc_tooltip(pointFormat = "Valor: {point.x:.2f}<br>Densidad: {point.y:.4f}") |>
+    highcharter::hc_exporting(enabled = TRUE)
+}
 
   # ---- 0.2 Validaciones cortas ----------------------------------------
   .need_numeric <- function(df, var, msg = "Seleccione una variable numérica válida.") {
@@ -38,23 +81,41 @@ server <- function(input, output, session) {
     validate(need(is.numeric(df[[var]]), msg))
   }
 
-  # ---- 0.3 Helpers Highcharter ----------------------------------------
-  .hc_density <- function(x, name, color) {
-    highcharter::hchart(stats::density(x, na.rm = TRUE), type = "area", name = name, color = color) %>%
-      highcharter::hc_tooltip(crosshairs = TRUE, valueDecimals = 1, shared = TRUE, borderWidth = 5) %>%
-      highcharter::hc_chart(zoomType = "xy") %>%
-      highcharter::hc_exporting(enabled = TRUE)
+# ---- 0.3 Helpers Highcharter (FIX) -----------------------------------
+.hc_density_compare <- function(x1, x2, name1, name2,
+                                col1 = "skyblue", col2 = "green",
+                                title = "Comparación de Densidades") {
+  x1 <- x1[is.finite(x1)]
+  x2 <- x2[is.finite(x2)]
+  if (length(x1) < 2 || length(x2) < 2) {
+    # Chart mínimo y mensaje si no hay suficientes datos
+    return(
+      highcharter::highchart() |>
+        highcharter::hc_title(text = "No hay datos suficientes para comparar densidades") |>
+        highcharter::hc_chart(zoomType = "xy")
+    )
   }
 
-  .hc_density_compare <- function(x1, x2, name1, name2, col1 = "skyblue", col2 = "green", title = "Comparación de Densidades") {
-    highcharter::highchart() %>%
-      highcharter::hc_add_series(h = stats::density(x1, na.rm = TRUE), type = "area", name = name1, color = col1) %>%
-      highcharter::hc_add_series(h = stats::density(x2, na.rm = TRUE), type = "area", name = name2, color = col2) %>%
-      highcharter::hc_title(text = title) %>%
-      highcharter::hc_tooltip(crosshairs = TRUE, valueDecimals = 1, shared = TRUE, borderWidth = 5) %>%
-      highcharter::hc_chart(zoomType = "xy") %>%
-      highcharter::hc_exporting(enabled = TRUE)
-  }
+  d1 <- stats::density(x1, na.rm = TRUE)
+  d2 <- stats::density(x2, na.rm = TRUE)
+
+  # Convertimos a pares (x, y) para highcharter
+  s1 <- highcharter::list_parse2(data.frame(x = d1$x, y = d1$y))
+  s2 <- highcharter::list_parse2(data.frame(x = d2$x, y = d2$y))
+
+  highcharter::highchart() |>
+    highcharter::hc_add_series(
+      data = s1, type = "area", name = name1, color = col1
+    ) |>
+    highcharter::hc_add_series(
+      data = s2, type = "area", name = name2, color = col2
+    ) |>
+    highcharter::hc_title(text = title) |>
+    highcharter::hc_tooltip(crosshairs = TRUE, valueDecimals = 3,
+                            shared = TRUE, borderWidth = 5) |>
+    highcharter::hc_chart(zoomType = "xy") |>
+    highcharter::hc_exporting(enabled = TRUE)
+}
 
   # ---- 0.4 Helpers Reportes (ggsave + officer) ------------------------
   .ggsave_tmp <- function(plot, w = 7, h = 5, dpi = 300) {
@@ -370,56 +431,85 @@ output$downloadReport1 <- downloadHandler(
     filename = function() paste0("Muestra_MUM-", Sys.Date(), ".txt"),
     content  = function(file) utils::write.table(rv$muestra_mum, file, row.names = FALSE)
   )
-  output$download2.3 <- downloadHandler(
-    filename = function() paste0("Muestra_MUM-", Sys.Date(), ".xlsx"),
-    content  = function(file) openxlsx::write.xlsx(rv$muestra_mum, file)
-  )
-
-  # ---- 2.4 Reporte MUM (.docx) ----------------------------------------
-  generarGraficoDensidadMUM <- function(datosOriginales, datosMuestra, variable) {
-    ggplot2::ggplot() +
-      ggplot2::geom_density(data = datosOriginales, ggplot2::aes(x = .data[[variable]]), fill = "blue", alpha = 0.5) +
-      ggplot2::geom_density(data = datosMuestra,    ggplot2::aes(x = .data[[variable]]), fill = "lightgreen", alpha = 0.5) +
-      ggplot2::labs(title = "Comparación entre datos Original vs Muestra", x = variable, y = "Densidad") +
-      ggplot2::theme_minimal()
+output$download2.3 <- downloadHandler(
+  filename = function() paste0("Muestra_MUM-", Sys.Date(), ".xlsx"),
+  contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  content = function(file) {
+    tryCatch({
+      req(rv$muestra_mum)
+      df <- .sanitize_for_xlsx(rv$muestra_mum)
+      openxlsx::write.xlsx(df, file)
+    }, error = function(e) {
+      showNotification(paste("No se pudo generar XLSX (MUM):", conditionMessage(e)),
+                       type = "error", duration = 10)
+      validate(need(FALSE, "Fallo al generar XLSX (MUM)."))
+    })
   }
+)
 
-  output$downloadReport2 <- downloadHandler(
-    filename = function() paste0("Muestreo_MUM_", Sys.Date(), ".docx"),
-    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    content = function(file) {
-      tryCatch({
-        if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
-        req(data2(), input$variable2, rv$sample_size_mum, rv$seed_mum, rv$muestra_mum)
+# ---- 2.4 Reporte MUM (.docx) ----------------------------------------
+generarGraficoDensidadMUM <- function(datosOriginales, datosMuestra, variable) {
+  ggplot2::ggplot() +
+    ggplot2::geom_density(data = datosOriginales, ggplot2::aes(x = .data[[variable]]), fill = "blue", alpha = 0.5) +
+    ggplot2::geom_density(data = datosMuestra,    ggplot2::aes(x = .data[[variable]]), fill = "lightgreen", alpha = 0.5) +
+    ggplot2::labs(title = "Comparación entre datos Original vs Muestra", x = variable, y = "Densidad") +
+    ggplot2::theme_minimal()
+}
 
-        doc <- officer::read_docx() |>
-          officer::body_add_par("Muestreo por Unidades Monetarias", style = "heading 1") |>
-          officer::body_add_par("Parámetros", style = "heading 2") |>
-          officer::body_add_par(paste("Nombre del archivo de datos:", input$file2$name), style = "Normal") |>
-          officer::body_add_par(paste("Variable seleccionada:", input$variable2), style = "Normal") |>
-          officer::body_add_par(paste("Error Tolerable:", input$freq1_MUM), style = "Normal") |>
-          officer::body_add_par(paste("Error Esperado:", input$freq2_MUM), style = "Normal") |>
-          officer::body_add_par(paste("Nivel de confianza:", input$freq3_MUM), style = "Normal") |>
-          officer::body_add_par(paste("Selección de la distribución:", input$distri_1), style = "Normal") |>
-          officer::body_add_par("Información de Muestreo", style = "heading 2") |>
-          officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_mum), style = "Normal") |>
-          officer::body_add_par(paste("Semilla para selección por PPT:", rv$seed_mum), style = "Normal")
+output$downloadReport2 <- downloadHandler(
+  filename = function() paste0("Muestreo_MUM_", Sys.Date(), ".docx"),
+  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  content = function(file) {
+    tryCatch({
+      # Requisitos mínimos para generar
+      req(data2(), input$variable2, rv$sample_size_mum, rv$seed_mum, rv$muestra_mum)
+      validate(need(nrow(rv$muestra_mum) > 0, "La muestra MUM está vacía."))
 
-        g <- generarGraficoDensidadMUM(data2(), rv$muestra_mum, input$variable2)
-        img <- .ggsave_tmp(g, 7, 5, 300); on.exit(unlink(img), add = TRUE)
-        doc <- doc |>
-          officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
-          officer::body_add_img(src = img, width = 7, height = 5) |>
-          officer::body_add_par("Muestra Seleccionada", style = "heading 2") |>
-          officer::body_add_table(rv$muestra_mum, style = "table_template")
+      # Paquetes de reporte (opcionalmente presentes)
+      have_officer   <- requireNamespace("officer",   quietly = TRUE)
+      have_flextable <- requireNamespace("flextable", quietly = TRUE)
+      if (!have_officer) stop("Falta paquete 'officer'.")
 
-        print(doc, target = file)
-      }, error = function(e) {
-        showNotification(paste("No se pudo generar el DOCX (MUM):", conditionMessage(e)), type = "error", duration = 10)
-        validate(need(FALSE, "Fallo en la generación del reporte DOCX (MUM)."))
-      })
-    }
-  )
+      doc <- officer::read_docx() |>
+        officer::body_add_par("Muestreo por Unidades Monetarias", style = "heading 1") |>
+        officer::body_add_par("Parámetros", style = "heading 2") |>
+        officer::body_add_par(paste("Nombre del archivo de datos:", input$file2$name), style = "Normal") |>
+        officer::body_add_par(paste("Variable seleccionada:", input$variable2), style = "Normal") |>
+        officer::body_add_par(paste("Error Tolerable:", input$freq1_MUM), style = "Normal") |>
+        officer::body_add_par(paste("Error Esperado:", input$freq2_MUM), style = "Normal") |>
+        officer::body_add_par(paste("Nivel de confianza:", input$freq3_MUM), style = "Normal") |>
+        officer::body_add_par(paste("Selección de la distribución:", input$distri_1), style = "Normal") |>
+        officer::body_add_par("Información de Muestreo", style = "heading 2") |>
+        officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_mum), style = "Normal") |>
+        officer::body_add_par(paste("Semilla para selección por PPT:", rv$seed_mum), style = "Normal")
+
+      # Gráfico comparativo
+      g   <- generarGraficoDensidadMUM(data2(), rv$muestra_mum, input$variable2)
+      img <- .ggsave_tmp(g, 7, 5, 300); on.exit(unlink(img), add = TRUE)
+
+      doc <- doc |>
+        officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
+        officer::body_add_img(src = img, width = 7, height = 5) |>
+        officer::body_add_par("Muestra Seleccionada", style = "heading 2")
+
+      # Tabla: preferir flextable si está disponible; si no, usar body_add_table sin estilo
+      if (have_flextable && "body_add_flextable" %in% getNamespaceExports("flextable")) {
+        ft <- flextable::flextable(rv$muestra_mum)
+        doc <- flextable::body_add_flextable(doc, ft)
+      } else {
+        # Evita depender de un estilo que podría no existir en el template
+        doc <- officer::body_add_table(doc, value = rv$muestra_mum)
+      }
+
+      print(doc, target = file)
+
+    }, error = function(e) {
+      showNotification(paste("No se pudo generar el DOCX (MUM):", conditionMessage(e)),
+                       type = "error", duration = 10)
+      validate(need(FALSE, "Fallo en la generación del reporte DOCX (MUM)."))
+    })
+  }
+)
 
   # =====================================================================
   # 3) MUESTREO LES (p4)  - fileInput: file3
@@ -561,56 +651,110 @@ output$downloadReport1 <- downloadHandler(
     filename = function() paste0("MuestraLES-", Sys.Date(), ".txt"),
     content  = function(file) utils::write.table(rv$muestra_les, file, row.names = FALSE)
   )
-  output$download4.3 <- downloadHandler(
-    filename = function() paste0("MuestraLES-", Sys.Date(), ".xlsx"),
-    content  = function(file) openxlsx::write.xlsx(rv$muestra_les, file)
-  )
+output$download4.3 <- downloadHandler(
+  filename = function() paste0("MuestraLES-", Sys.Date(), ".xlsx"),
+  contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  content = function(file) {
+    tryCatch({
+      req(rv$muestra_les)
+      df <- .sanitize_for_xlsx(rv$muestra_les)
+      openxlsx::write.xlsx(df, file)
+    }, error = function(e) {
+      showNotification(paste("No se pudo generar XLSX (LES):", conditionMessage(e)),
+                       type = "error", duration = 10)
+      validate(need(FALSE, "Fallo al generar XLSX (LES)."))
+    })
+  }
+)
 
-  # ---- 3.4 Reporte LES (.docx) ----------------------------------------
-  generarGraficoDensidadLES <- function(datosOriginales, datosMuestra, variable) {
-    ggplot2::ggplot() +
-      ggplot2::geom_density(data = datosOriginales, ggplot2::aes(x = .data[[variable]]), fill = "blue", alpha = 0.5) +
-      ggplot2::geom_density(data = datosMuestra,    ggplot2::aes(x = .data[[variable]]), fill = "lightgreen", alpha = 0.5) +
-      ggplot2::labs(title = "Comparación entre datos Original vs Muestra LES", x = variable, y = "Densidad") +
-      ggplot2::theme_minimal()
+# ---- 3.4 Reporte LES (.docx) ----------------------------------------
+generarGraficoDensidadLES <- function(datosOriginales, datosMuestra, variable) {
+  ggplot2::ggplot() +
+    ggplot2::geom_density(data = datosOriginales, ggplot2::aes(x = .data[[variable]]),
+                          fill = "blue", alpha = 0.5) +
+    ggplot2::geom_density(data = datosMuestra, ggplot2::aes(x = .data[[variable]]),
+                          fill = "lightgreen", alpha = 0.5) +
+    ggplot2::labs(title = "Comparación entre datos Original vs Muestra LES",
+                  x = variable, y = "Densidad") +
+    ggplot2::theme_minimal()
+}
+
+# Helper: sanitizar tabla para officer::body_add_table()
+.sanitize_for_docx <- function(df, max_rows = 5000) {
+  if (inherits(df, "tbl_df")) df <- as.data.frame(df)
+
+  # Aplastar list-cols y factores extraños a texto
+  for (nm in names(df)) {
+    col <- df[[nm]]
+    if (is.list(col)) {
+      df[[nm]] <- vapply(col, function(x) {
+        if (length(x) == 0) return("")
+        if (is.atomic(x)) paste(x, collapse = ", ")
+        else as.character(paste0("<", class(x)[1], ">"))
+      }, FUN.VALUE = character(1))
+    } else if (inherits(col, "POSIXt")) {
+      df[[nm]] <- as.character(col)
+    } else if (inherits(col, "Date")) {
+      df[[nm]] <- as.character(col)
+    } else if (is.factor(col)) {
+      df[[nm]] <- as.character(col)
+    }
   }
 
-  output$downloadReport3 <- downloadHandler(
-    filename = function() paste0("Muestreo_LES_", Sys.Date(), ".docx"),
-    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    content = function(file) {
-      tryCatch({
-        if (!requireNamespace("officer", quietly = TRUE)) stop("Falta paquete 'officer'.")
-        req(data3(), input$variable3, rv$sample_size_les, rv$seed_les, rv$muestra_les)
+  # Limitar filas para no generar DOCX gigantes (opcional)
+  if (nrow(df) > max_rows) df <- df[seq_len(max_rows), , drop = FALSE]
+  df
+}
 
-        doc <- officer::read_docx() |>
-          officer::body_add_par("Muestreo LES", style = "heading 1") |>
-          officer::body_add_par("Parámetros", style = "heading 2") |>
-          officer::body_add_par(paste("Nombre del archivo de datos:", input$file3$name), style = "Normal") |>
-          officer::body_add_par(paste("Variable seleccionada:", input$variable3), style = "Normal") |>
-          officer::body_add_par(paste("Error Tolerable:", input$freq1_LES), style = "Normal") |>
-          officer::body_add_par(paste("Error Esperado:", input$freq2_LES), style = "Normal") |>
-          officer::body_add_par(paste("Nivel de confianza:", input$freq3_LES), style = "Normal") |>
-          officer::body_add_par(paste("Selección de la distribución:", input$distri_2), style = "Normal") |>
-          officer::body_add_par("Información de Muestreo", style = "heading 2") |>
-          officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_les), style = "Normal") |>
-          officer::body_add_par(paste("Semilla para selección aleatoria inferior al LES:", rv$seed_les), style = "Normal")
+output$downloadReport3 <- downloadHandler(
+  filename = function() paste0("Muestreo_LES_", Sys.Date(), ".docx"),
+  contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  content = function(file) {
+    tryCatch({
+      if (!requireNamespace("officer", quietly = TRUE)) {
+        stop("Falta paquete 'officer'. Instala con install.packages('officer').")
+      }
+      req(data3(), input$variable3, rv$sample_size_les, rv$seed_les, rv$muestra_les)
 
-        g <- generarGraficoDensidadLES(data3(), rv$muestra_les, input$variable3)
-        img <- .ggsave_tmp(g, 7, 5, 300); on.exit(unlink(img), add = TRUE)
-        doc <- doc |>
-          officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
-          officer::body_add_img(src = img, width = 7, height = 5) |>
-          officer::body_add_par("Muestra Seleccionada", style = "heading 2") |>
-          officer::body_add_table(rv$muestra_les, style = "table_template")
+      # Documento
+      doc <- officer::read_docx() |>
+        officer::body_add_par("Muestreo LES", style = "heading 1") |>
+        officer::body_add_par("Parámetros", style = "heading 2") |>
+        officer::body_add_par(paste("Nombre del archivo de datos:", input$file3$name), style = "Normal") |>
+        officer::body_add_par(paste("Variable seleccionada:", input$variable3), style = "Normal") |>
+        officer::body_add_par(paste("Error Tolerable:", input$freq1_LES), style = "Normal") |>
+        officer::body_add_par(paste("Error Esperado:", input$freq2_LES), style = "Normal") |>
+        officer::body_add_par(paste("Nivel de confianza:", input$freq3_LES), style = "Normal") |>
+        officer::body_add_par(paste("Selección de la distribución:", input$distri_2), style = "Normal") |>
+        officer::body_add_par("Información de Muestreo", style = "heading 2") |>
+        officer::body_add_par(paste("Tamaño de Muestra:", rv$sample_size_les), style = "Normal") |>
+        officer::body_add_par(paste("Semilla para selección aleatoria inferior al LES:", rv$seed_les), style = "Normal")
 
-        print(doc, target = file)
-      }, error = function(e) {
-        showNotification(paste("No se pudo generar el DOCX (LES):", conditionMessage(e)), type = "error", duration = 10)
-        validate(need(FALSE, "Fallo en la generación del reporte DOCX (LES)."))
-      })
-    }
-  )
+      # Gráfico
+      g <- generarGraficoDensidadLES(data3(), rv$muestra_les, input$variable3)
+      img <- .ggsave_tmp(g, 7, 5, 300)
+      on.exit(unlink(img), add = TRUE)
+
+      doc <- doc |>
+        officer::body_add_par("Gráfico comparativo entre valores originales y obtenidos por la muestra.", style = "heading 2") |>
+        officer::body_add_img(src = img, width = 7, height = 5)
+
+      # Tabla (sanitizada)
+      tabla_saneada <- .sanitize_for_docx(rv$muestra_les)
+      doc <- doc |>
+        officer::body_add_par("Muestra Seleccionada", style = "heading 2") |>
+        officer::body_add_table(tabla_saneada, style = "table_template")
+
+      print(doc, target = file)
+    }, error = function(e) {
+      showNotification(
+        paste("No se pudo generar el DOCX (LES):", conditionMessage(e)),
+        type = "error", duration = 10
+      )
+      validate(need(FALSE, "Fallo en la generación del reporte DOCX (LES)."))
+    })
+  }
+)
 
   # =====================================================================
   # 4) MUESTREO POR ATRIBUTOS (p5)  - fileInput: file4
@@ -724,10 +868,21 @@ output$downloadReport1 <- downloadHandler(
       filename = function() paste0("MuestraAtributo-", Sys.Date(), ".txt"),
       content  = function(file) utils::write.table(rv$muestra_atri, file, row.names = FALSE)
     )
-    output$download5.3 <- downloadHandler(
-      filename = function() paste0("MuestraAtributo-", Sys.Date(), ".xlsx"),
-      content  = function(file) openxlsx::write.xlsx(rv$muestra_atri, file)
-    )
+output$download5.3 <- downloadHandler(
+  filename = function() paste0("MuestraAtributo-", Sys.Date(), ".xlsx"),
+  contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  content = function(file) {
+    tryCatch({
+      req(rv$muestra_atri)
+      df <- .sanitize_for_xlsx(rv$muestra_atri)
+      openxlsx::write.xlsx(df, file)
+    }, error = function(e) {
+      showNotification(paste("No se pudo generar XLSX (Atributos):", conditionMessage(e)),
+                       type = "error", duration = 10)
+      validate(need(FALSE, "Fallo al generar XLSX (Atributos)."))
+    })
+  }
+)
 
     # Reporte atributos
     generarGraficoPorcentajesAtri <- function(datosOriginales, datosMuestra) {
@@ -913,10 +1068,21 @@ output$downloadReport1 <- downloadHandler(
       filename = function() paste0("Diferencias-", Sys.Date(), ".txt"),
       content  = function(file) utils::write.table(Diferencias(), file, row.names = FALSE)
     )
-    output$download3.3 <- downloadHandler(
-      filename = function() paste0("Diferencias-", Sys.Date(), ".xlsx"),
-      content  = function(file) openxlsx::write.xlsx(Diferencias(), file)
-    )
+output$download3.3 <- downloadHandler(
+  filename = function() paste0("Diferencias-", Sys.Date(), ".xlsx"),
+  contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  content = function(file) {
+    tryCatch({
+      req(Diferencias())
+      df <- .sanitize_for_xlsx(Diferencias())
+      openxlsx::write.xlsx(df, file)
+    }, error = function(e) {
+      showNotification(paste("No se pudo generar XLSX (Diferencias):", conditionMessage(e)),
+                       type = "error", duration = 10)
+      validate(need(FALSE, "Fallo al generar XLSX (Diferencias)."))
+    })
+  }
+)
 
     # Umbrales y tabla de decisión
     calculaIndicadoresDecision <- function(datos, monto_maximo, porcentaje_umbral, conteo_umbral, casos_umbral) {
