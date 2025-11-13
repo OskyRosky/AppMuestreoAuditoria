@@ -21,7 +21,17 @@
 # garantiza consistencia entre entornos Windows/Mac/Linux.
 # =========================================================
 options(repos = c(CRAN = "https://cloud.r-project.org"))
-options(pkgType = "binary")
+
+# Elegir tipo de paquete según SO:
+os_name <- Sys.info()[["sysname"]]
+
+if (os_name %in% c("Darwin", "Windows")) {
+  # Mac / Windows → usar binarios (más rápido)
+  options(pkgType = "binary")
+} else {
+  # Linux (por ejemplo, dentro de Docker) → usar source
+  options(pkgType = "source")
+}
 
 # =========================================================
 # (1) Listado de dependencias de la App

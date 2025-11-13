@@ -1,0 +1,8 @@
+.Rhistory
+.Rproj.user
+.RData
+.Ruserdata
+.git
+.gitignore
+*.Rproj
+data/raw/*
