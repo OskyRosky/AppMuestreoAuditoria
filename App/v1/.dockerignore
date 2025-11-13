@@ -1,0 +1,12 @@
+
+.git
+.Rhistory
+.Rproj.user
+.Rproj
+.RData
+.Ruserdata
+__pycache__
+*.log
+*.tmp
+*.rds
+*.Rproj
